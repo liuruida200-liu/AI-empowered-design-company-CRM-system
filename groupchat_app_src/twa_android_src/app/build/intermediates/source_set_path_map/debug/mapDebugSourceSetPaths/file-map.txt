@@ -1,0 +1,11 @@
+com.helloworld.groupchat.twa.app-core-1.1.0-0 C:\Users\young\.gradle\caches\8.13\transforms\2be6921bbd26dcfad7b49e3ad4633350\transformed\core-1.1.0\res
+com.helloworld.groupchat.twa.app-jetified-androidbrowserhelper-2.5.0-1 C:\Users\young\.gradle\caches\8.13\transforms\773fdde205a4e53813b988cfdb1f2bc0\transformed\jetified-androidbrowserhelper-2.5.0\res
+com.helloworld.groupchat.twa.app-browser-1.4.0-2 C:\Users\young\.gradle\caches\8.13\transforms\7d9a8e691112d02f8b6c3f1c400c4d9a\transformed\browser-1.4.0\res
+com.helloworld.groupchat.twa.app-pngs-3 C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\build\generated\res\pngs\debug
+com.helloworld.groupchat.twa.app-resValues-4 C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\build\generated\res\resValues\debug
+com.helloworld.groupchat.twa.app-updated_navigation_xml-5 C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\build\generated\updated_navigation_xml\debug
+com.helloworld.groupchat.twa.app-packageDebugResources-6 C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\build\intermediates\incremental\debug\packageDebugResources\merged.dir
+com.helloworld.groupchat.twa.app-packageDebugResources-7 C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\build\intermediates\incremental\debug\packageDebugResources\stripped.dir
+com.helloworld.groupchat.twa.app-debug-8 C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\build\intermediates\merged_res\debug\mergeDebugResources
+com.helloworld.groupchat.twa.app-debug-9 C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\src\debug\res
+com.helloworld.groupchat.twa.app-main-10 C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\src\main\res

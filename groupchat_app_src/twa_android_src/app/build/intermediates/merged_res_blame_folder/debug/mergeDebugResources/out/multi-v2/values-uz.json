@@ -1,0 +1,36 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.helloworld.groupchat.twa.app-mergeDebugResources-5:/values-uz/values-uz.xml",
+            "map": [
+                {
+                    "source": "C:\\Users\\young\\.gradle\\caches\\8.13\\transforms\\7d9a8e691112d02f8b6c3f1c400c4d9a\\transformed\\browser-1.4.0\\res\\values-uz\\values-uz.xml",
+                    "from": {
+                        "startLines": "2,3,4,5",
+                        "startColumns": "4,4,4,4",
+                        "startOffsets": "55,173,282,392",
+                        "endColumns": "117,108,109,105",
+                        "endOffsets": "168,277,387,493"
+                    }
+                },
+                {
+                    "source": "C:\\Users\\young\\.gradle\\caches\\8.13\\transforms\\2be6921bbd26dcfad7b49e3ad4633350\\transformed\\core-1.1.0\\res\\values-uz\\values-uz.xml",
+                    "from": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endColumns": "100",
+                        "endOffsets": "151"
+                    },
+                    "to": {
+                        "startLines": "6",
+                        "startColumns": "4",
+                        "startOffsets": "498",
+                        "endColumns": "100",
+                        "endOffsets": "594"
+                    }
+                }
+            ]
+        }
+    ]
+}

@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Group Chat</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- ───── Auth Screen ───── -->
+  <div class="auth-screen" id="auth">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <span class="brand-dot"></span>
+        <h1>GroupChat</h1>
+      </div>
+      <p class="auth-sub">Sign in or create an account to continue.</p>
+      <div class="field-group">
+        <input id="username" class="field" placeholder="Username" autocomplete="off">
+        <input id="password" class="field" placeholder="Password" type="password">
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="loginBtn">Log In</button>
+        <button class="btn btn-ghost" id="signupBtn">Sign Up</button>
+      </div>
+      <div id="authMsg" class="auth-error"></div>
+    </div>
+  </div>
+
+  <!-- ───── Chat App ───── -->
+  <div class="app hidden" id="app">
+
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <span class="brand-dot small"></span>
+        <div class="sidebar-identity">
+          <span class="sidebar-title">GroupChat</span>
+          <span class="sidebar-username" id="sidebarUsername"></span>
+        </div>
+        <button class="btn-icon" id="logoutBtn" title="Log out">⏻</button>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="section-label">Rooms</div>
+        <ul class="room-list" id="roomList">
+          <!-- populated by JS -->
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <button class="btn btn-create" id="showCreateRoom">+ New Room</button>
+        <div class="create-room-form hidden" id="createRoomForm">
+          <input class="field small" id="roomName" placeholder="Room name">
+          <input class="field small" id="roomDesc" placeholder="Description (optional)">
+          <div class="btn-row tight">
+            <button class="btn btn-primary small" id="createRoomBtn">Create</button>
+            <button class="btn btn-ghost small" id="cancelCreateRoom">Cancel</button>
+          </div>
+          <div id="roomMsg" class="auth-error"></div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main chat area -->
+    <main class="chat-area" id="chatArea">
+
+      <!-- Empty state (no room selected) -->
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon">⌗</div>
+        <p>Select a room to start chatting</p>
+      </div>
+
+      <!-- Chat view (hidden until a room is selected) -->
+      <div class="chat-view hidden" id="chatView">
+        <header class="chat-header">
+          <div class="chat-room-info">
+            <span class="chat-room-name" id="currentRoomName"></span>
+            <span class="chat-room-desc" id="currentRoomDesc"></span>
+          </div>
+          <button class="btn btn-ghost small" id="leaveRoomBtn">Leave</button>
+        </header>
+
+        <div class="messages" id="messages"></div>
+
+        <div class="composer">
+          <input class="field composer-input" id="chatInput" placeholder="Type a message…" autocomplete="off">
+          <button class="btn btn-primary" id="sendBtn">Send</button>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,99 @@
+-- Merging decision tree log ---
+manifest
+ADDED from C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\src\main\AndroidManifest.xml:2:1-26:12
+INJECTED from C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\src\main\AndroidManifest.xml:2:1-26:12
+INJECTED from C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\src\main\AndroidManifest.xml:2:1-26:12
+INJECTED from C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\src\main\AndroidManifest.xml:2:1-26:12
+MERGED from [com.google.androidbrowserhelper:androidbrowserhelper:2.5.0] C:\Users\young\.gradle\caches\8.13\transforms\773fdde205a4e53813b988cfdb1f2bc0\transformed\jetified-androidbrowserhelper-2.5.0\AndroidManifest.xml:17:1-36:12
+MERGED from [androidx.browser:browser:1.4.0] C:\Users\young\.gradle\caches\8.13\transforms\7d9a8e691112d02f8b6c3f1c400c4d9a\transformed\browser-1.4.0\AndroidManifest.xml:17:1-24:12
+MERGED from [androidx.core:core:1.1.0] C:\Users\young\.gradle\caches\8.13\transforms\2be6921bbd26dcfad7b49e3ad4633350\transformed\core-1.1.0\AndroidManifest.xml:17:1-26:12
+MERGED from [androidx.versionedparcelable:versionedparcelable:1.1.0] C:\Users\young\.gradle\caches\8.13\transforms\bb8fb56f7fa9deb32977201c44de15f1\transformed\versionedparcelable-1.1.0\AndroidManifest.xml:17:1-27:12
+MERGED from [androidx.interpolator:interpolator:1.0.0] C:\Users\young\.gradle\caches\8.13\transforms\e6d7d55be0070e2a6622a7360553ebee\transformed\interpolator-1.0.0\AndroidManifest.xml:17:1-22:12
+MERGED from [androidx.lifecycle:lifecycle-runtime:2.0.0] C:\Users\young\.gradle\caches\8.13\transforms\fdd107bd039c0b45d5b2f8c0fa555338\transformed\lifecycle-runtime-2.0.0\AndroidManifest.xml:17:1-22:12
+	package
+		INJECTED from C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\src\main\AndroidManifest.xml
+	android:versionName
+		INJECTED from C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\src\main\AndroidManifest.xml
+	android:versionCode
+		INJECTED from C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\src\main\AndroidManifest.xml
+	xmlns:android
+		ADDED from C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\src\main\AndroidManifest.xml:2:11-69
+uses-sdk
+ADDED from C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\src\main\AndroidManifest.xml:5:5-73
+INJECTED from C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\src\main\AndroidManifest.xml:5:5-73
+INJECTED from C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\src\main\AndroidManifest.xml:5:5-73
+MERGED from [com.google.androidbrowserhelper:androidbrowserhelper:2.5.0] C:\Users\young\.gradle\caches\8.13\transforms\773fdde205a4e53813b988cfdb1f2bc0\transformed\jetified-androidbrowserhelper-2.5.0\AndroidManifest.xml:22:5-24:41
+MERGED from [com.google.androidbrowserhelper:androidbrowserhelper:2.5.0] C:\Users\young\.gradle\caches\8.13\transforms\773fdde205a4e53813b988cfdb1f2bc0\transformed\jetified-androidbrowserhelper-2.5.0\AndroidManifest.xml:22:5-24:41
+MERGED from [androidx.browser:browser:1.4.0] C:\Users\young\.gradle\caches\8.13\transforms\7d9a8e691112d02f8b6c3f1c400c4d9a\transformed\browser-1.4.0\AndroidManifest.xml:20:5-22:41
+MERGED from [androidx.browser:browser:1.4.0] C:\Users\young\.gradle\caches\8.13\transforms\7d9a8e691112d02f8b6c3f1c400c4d9a\transformed\browser-1.4.0\AndroidManifest.xml:20:5-22:41
+MERGED from [androidx.core:core:1.1.0] C:\Users\young\.gradle\caches\8.13\transforms\2be6921bbd26dcfad7b49e3ad4633350\transformed\core-1.1.0\AndroidManifest.xml:20:5-22:41
+MERGED from [androidx.core:core:1.1.0] C:\Users\young\.gradle\caches\8.13\transforms\2be6921bbd26dcfad7b49e3ad4633350\transformed\core-1.1.0\AndroidManifest.xml:20:5-22:41
+MERGED from [androidx.versionedparcelable:versionedparcelable:1.1.0] C:\Users\young\.gradle\caches\8.13\transforms\bb8fb56f7fa9deb32977201c44de15f1\transformed\versionedparcelable-1.1.0\AndroidManifest.xml:20:5-22:41
+MERGED from [androidx.versionedparcelable:versionedparcelable:1.1.0] C:\Users\young\.gradle\caches\8.13\transforms\bb8fb56f7fa9deb32977201c44de15f1\transformed\versionedparcelable-1.1.0\AndroidManifest.xml:20:5-22:41
+MERGED from [androidx.interpolator:interpolator:1.0.0] C:\Users\young\.gradle\caches\8.13\transforms\e6d7d55be0070e2a6622a7360553ebee\transformed\interpolator-1.0.0\AndroidManifest.xml:20:5-44
+MERGED from [androidx.interpolator:interpolator:1.0.0] C:\Users\young\.gradle\caches\8.13\transforms\e6d7d55be0070e2a6622a7360553ebee\transformed\interpolator-1.0.0\AndroidManifest.xml:20:5-44
+MERGED from [androidx.lifecycle:lifecycle-runtime:2.0.0] C:\Users\young\.gradle\caches\8.13\transforms\fdd107bd039c0b45d5b2f8c0fa555338\transformed\lifecycle-runtime-2.0.0\AndroidManifest.xml:20:5-44
+MERGED from [androidx.lifecycle:lifecycle-runtime:2.0.0] C:\Users\young\.gradle\caches\8.13\transforms\fdd107bd039c0b45d5b2f8c0fa555338\transformed\lifecycle-runtime-2.0.0\AndroidManifest.xml:20:5-44
+	android:targetSdkVersion
+		ADDED from C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\src\main\AndroidManifest.xml:5:42-71
+		INJECTED from C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\src\main\AndroidManifest.xml
+	android:minSdkVersion
+		ADDED from C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\src\main\AndroidManifest.xml:5:15-41
+		INJECTED from C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\src\main\AndroidManifest.xml
+application
+ADDED from C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\src\main\AndroidManifest.xml:6:5-25:19
+INJECTED from C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\src\main\AndroidManifest.xml:6:5-25:19
+MERGED from [androidx.core:core:1.1.0] C:\Users\young\.gradle\caches\8.13\transforms\2be6921bbd26dcfad7b49e3ad4633350\transformed\core-1.1.0\AndroidManifest.xml:24:5-89
+MERGED from [androidx.core:core:1.1.0] C:\Users\young\.gradle\caches\8.13\transforms\2be6921bbd26dcfad7b49e3ad4633350\transformed\core-1.1.0\AndroidManifest.xml:24:5-89
+MERGED from [androidx.versionedparcelable:versionedparcelable:1.1.0] C:\Users\young\.gradle\caches\8.13\transforms\bb8fb56f7fa9deb32977201c44de15f1\transformed\versionedparcelable-1.1.0\AndroidManifest.xml:24:5-25:19
+MERGED from [androidx.versionedparcelable:versionedparcelable:1.1.0] C:\Users\young\.gradle\caches\8.13\transforms\bb8fb56f7fa9deb32977201c44de15f1\transformed\versionedparcelable-1.1.0\AndroidManifest.xml:24:5-25:19
+	android:extractNativeLibs
+		INJECTED from C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\src\main\AndroidManifest.xml
+	android:appComponentFactory
+		ADDED from [androidx.core:core:1.1.0] C:\Users\young\.gradle\caches\8.13\transforms\2be6921bbd26dcfad7b49e3ad4633350\transformed\core-1.1.0\AndroidManifest.xml:24:18-86
+	android:supportsRtl
+		ADDED from C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\src\main\AndroidManifest.xml:10:9-35
+	android:label
+		ADDED from C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\src\main\AndroidManifest.xml:7:9-34
+	android:icon
+		ADDED from C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\src\main\AndroidManifest.xml:8:9-43
+	android:allowBackup
+		ADDED from C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\src\main\AndroidManifest.xml:9:9-35
+activity#com.google.androidbrowserhelper.trusted.LauncherActivity
+ADDED from C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\src\main\AndroidManifest.xml:14:9-23:20
+	android:exported
+		ADDED from C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\src\main\AndroidManifest.xml:16:13-36
+	android:name
+		ADDED from C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\src\main\AndroidManifest.xml:15:13-84
+meta-data#android.support.customtabs.trusted.DEFAULT_URL
+ADDED from C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\src\main\AndroidManifest.xml:17:13-18:53
+	android:value
+		ADDED from C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\src\main\AndroidManifest.xml:18:17-51
+	android:name
+		ADDED from C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\src\main\AndroidManifest.xml:17:24-85
+intent-filter#action:name:android.intent.action.MAIN+category:name:android.intent.category.LAUNCHER
+ADDED from C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\src\main\AndroidManifest.xml:19:13-22:29
+action#android.intent.action.MAIN
+ADDED from C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\src\main\AndroidManifest.xml:20:17-68
+	android:name
+		ADDED from C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\src\main\AndroidManifest.xml:20:25-66
+category#android.intent.category.LAUNCHER
+ADDED from C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\src\main\AndroidManifest.xml:21:17-76
+	android:name
+		ADDED from C:\Users\young\Downloads\groupchat_app_src\twa_android_src\app\src\main\AndroidManifest.xml:21:27-74
+queries
+ADDED from [com.google.androidbrowserhelper:androidbrowserhelper:2.5.0] C:\Users\young\.gradle\caches\8.13\transforms\773fdde205a4e53813b988cfdb1f2bc0\transformed\jetified-androidbrowserhelper-2.5.0\AndroidManifest.xml:26:5-34:15
+intent#action:name:android.intent.action.VIEW+category:name:android.intent.category.BROWSABLE+data:scheme:https
+ADDED from [com.google.androidbrowserhelper:androidbrowserhelper:2.5.0] C:\Users\young\.gradle\caches\8.13\transforms\773fdde205a4e53813b988cfdb1f2bc0\transformed\jetified-androidbrowserhelper-2.5.0\AndroidManifest.xml:27:9-33:18
+action#android.intent.action.VIEW
+ADDED from [com.google.androidbrowserhelper:androidbrowserhelper:2.5.0] C:\Users\young\.gradle\caches\8.13\transforms\773fdde205a4e53813b988cfdb1f2bc0\transformed\jetified-androidbrowserhelper-2.5.0\AndroidManifest.xml:28:13-65
+	android:name
+		ADDED from [com.google.androidbrowserhelper:androidbrowserhelper:2.5.0] C:\Users\young\.gradle\caches\8.13\transforms\773fdde205a4e53813b988cfdb1f2bc0\transformed\jetified-androidbrowserhelper-2.5.0\AndroidManifest.xml:28:21-62
+category#android.intent.category.BROWSABLE
+ADDED from [com.google.androidbrowserhelper:androidbrowserhelper:2.5.0] C:\Users\young\.gradle\caches\8.13\transforms\773fdde205a4e53813b988cfdb1f2bc0\transformed\jetified-androidbrowserhelper-2.5.0\AndroidManifest.xml:30:13-74
+	android:name
+		ADDED from [com.google.androidbrowserhelper:androidbrowserhelper:2.5.0] C:\Users\young\.gradle\caches\8.13\transforms\773fdde205a4e53813b988cfdb1f2bc0\transformed\jetified-androidbrowserhelper-2.5.0\AndroidManifest.xml:30:23-71
+data
+ADDED from [com.google.androidbrowserhelper:androidbrowserhelper:2.5.0] C:\Users\young\.gradle\caches\8.13\transforms\773fdde205a4e53813b988cfdb1f2bc0\transformed\jetified-androidbrowserhelper-2.5.0\AndroidManifest.xml:32:13-44
+	android:scheme
+		ADDED from [com.google.androidbrowserhelper:androidbrowserhelper:2.5.0] C:\Users\young\.gradle\caches\8.13\transforms\773fdde205a4e53813b988cfdb1f2bc0\transformed\jetified-androidbrowserhelper-2.5.0\AndroidManifest.xml:32:19-41
