@@ -118,3 +118,37 @@ Initial focus areas include:
 ## Long-Term Goal
 
 To build an AI-native CRM platform for custom design and print companies that combines sales support, production visibility, and company knowledge into one intelligent workflow.
+
+
+Progress:
+Database (db.py + schema.sql)
+
+Added Room and RoomMember tables
+Added room_id to Message so every message belongs to a specific room
+Fixed the FK delete inconsistency between SQLAlchemy and SQL file
+
+
+Backend (app.py)
+
+Fixed the session bug in maybe_answer_with_llm — now opens its own fresh session
+Added get_current_user shared dependency
+Added 6 new room routes: create, list, list my rooms, join, leave, get messages, post message
+All message routes are room-scoped and membership-gated
+LLM bot replies into the correct room
+
+
+WebSocket (websocket_manager.py)
+
+Rebuilt from a flat list into a room-aware dictionary
+Added switch_room() to move connections between rooms cleanly
+Broadcasts only to connections inside the target room
+
+
+Frontend (index.html + styles.css + app.js)
+
+New two-column layout with sidebar and main chat area
+Room list with join badges, active room highlight
+Create room form, leave room button
+Logged-in username shown in sidebar header
+Last active room restored on refresh
+Joined rooms persisted across refresh via GET /api/rooms/my
