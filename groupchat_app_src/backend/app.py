@@ -1,10 +1,10 @@
 import os
 import asyncio
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, status
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from dotenv import load_dotenv
@@ -30,6 +30,7 @@ manager = ConnectionManager()
 
 VALID_ROLES = {"customer", "salesperson", "production", "admin"}
 VALID_ROOM_TYPES = {"general", "customer_sales", "sales_production"}
+ALLOWED_EMOJIS = {"👍", "❤️", "😂", "😮", "😢", "🎉"}
 
 
 # ─────────────────────────── Schemas ────────────────────────────
@@ -151,12 +152,16 @@ async def maybe_answer_with_llm(
     if "?" not in content:
         return
 
-    # Fetch recent orders as context
+    # Fetch recent orders as context — scope to sender's own orders for customers
     orders_context = ""
     async with SessionLocal() as session:
-        res = await session.execute(
-            select(Order).order_by(desc(Order.created_at)).limit(5)
-        )
+        q = select(Order).order_by(desc(Order.created_at)).limit(5)
+        if sender_role == "customer" and sender_username:
+            user_res = await session.execute(select(User).where(User.username == sender_username))
+            sender_user = user_res.scalar_one_or_none()
+            if sender_user:
+                q = select(Order).where(Order.customer_id == sender_user.id).order_by(desc(Order.created_at)).limit(5)
+        res = await session.execute(q)
         recent_orders = res.scalars().all()
         if recent_orders:
             lines = []
@@ -329,7 +334,7 @@ async def leave_room(
 @app.get("/api/rooms/{room_id}/messages")
 async def get_room_messages(
     room_id: int,
-    limit: int = 50,
+    limit: int = Query(default=50, ge=1, le=200),
     search: Optional[str] = None,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
@@ -402,6 +407,8 @@ async def toggle_reaction(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ):
+    if payload.emoji not in ALLOWED_EMOJIS:
+        raise HTTPException(status_code=400, detail="Invalid emoji")
     msg = await session.get(Message, message_id)
     if not msg:
         raise HTTPException(status_code=404, detail="Message not found")
@@ -443,11 +450,13 @@ async def create_order(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ):
-    # Customers create orders for themselves; salespeople can create on behalf of a customer
+    # Customers create orders for themselves; salespeople create on behalf of a customer
     if current_user.role == "customer":
         customer_id = current_user.id
     else:
-        customer_id = payload.customer_id  # set by salesperson
+        if not payload.customer_id:
+            raise HTTPException(status_code=400, detail="customer_id is required when creating an order on behalf of a customer")
+        customer_id = payload.customer_id
 
     total = None
     if payload.unit_price and payload.quantity:
@@ -592,8 +601,17 @@ async def websocket_endpoint(websocket: WebSocket):
             if data.get("type") == "join_room":
                 room_id = data.get("room_id")
                 if room_id:
-                    manager.switch_room(websocket, room_id)
-                    await websocket.send_json({"type": "ack", "room_id": room_id})
+                    async with SessionLocal() as session:
+                        res = await session.execute(
+                            select(RoomMember).where(
+                                RoomMember.room_id == room_id,
+                                RoomMember.user_id == user.id,
+                            )
+                        )
+                        is_member = res.scalar_one_or_none() is not None
+                    if is_member:
+                        manager.switch_room(websocket, room_id)
+                        await websocket.send_json({"type": "ack", "room_id": room_id})
             elif data.get("type") == "typing":
                 room_id = data.get("room_id")
                 if room_id:

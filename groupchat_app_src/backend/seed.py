@@ -132,6 +132,18 @@ async def seed():
             existing_room = res.scalar_one_or_none()
             if existing_room:
                 room_map[r_data["name"]] = existing_room
+                # Ensure newly created demo users are members of this existing room
+                for member_name in r_data["members"]:
+                    u = user_map.get(member_name)
+                    if u:
+                        existing_mem = await session.execute(
+                            select(RoomMember).where(
+                                RoomMember.room_id == existing_room.id,
+                                RoomMember.user_id == u.id,
+                            )
+                        )
+                        if not existing_mem.scalar_one_or_none():
+                            session.add(RoomMember(room_id=existing_room.id, user_id=u.id))
                 continue
             owner = user_map.get(r_data["members"][0])
             room = Room(

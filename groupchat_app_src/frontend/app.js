@@ -42,7 +42,6 @@ let token        = localStorage.getItem("token") || "";
 let currentUser  = localStorage.getItem("username") || "";
 let currentRole  = localStorage.getItem("role") || "customer";
 let activeRoomId = null;
-let activeRoomType = "general";
 let joinedRooms  = new Set();
 let allRooms     = [];
 let ws;
@@ -63,8 +62,6 @@ const ROOM_TYPE_LABELS = {
   sales_production: "Sales ↔ Production",
   general:          "General",
 };
-
-const STATUS_ORDER = ["draft", "pending", "in_production", "completed", "cancelled"];
 
 // ─── API helper ──────────────────────────────────────────────────────────────
 async function callAPI(path, method = "GET", body) {
@@ -132,10 +129,15 @@ logoutBtn.onclick = () => {
   token = ""; currentUser = ""; currentRole = "customer";
   activeRoomId = null;
   joinedRooms.clear(); onlineUsers.clear();
+  unreadCounts = {}; mentionRooms.clear();
   localStorage.removeItem("token");
   localStorage.removeItem("username");
   localStorage.removeItem("role");
-  if (ws) ws.close();
+  if (ws) {
+    ws.onclose = null; // prevent auto-reconnect after manual logout
+    ws.close();
+    ws = null;
+  }
   showAuth();
 };
 
@@ -225,7 +227,6 @@ async function handleRoomClick(room) {
 
 async function switchRoom(room) {
   activeRoomId = room.id;
-  activeRoomType = room.type || "general";
   localStorage.setItem("lastRoomId", room.id);
   unreadCounts[room.id] = 0;
   mentionRooms.delete(room.id);
@@ -366,6 +367,7 @@ async function sendMessage() {
   try {
     await callAPI(`/rooms/${activeRoomId}/messages`, "POST", { content: text });
   } catch (e) {
+    chatInput.value = text; // restore on failure so user doesn't lose their message
     console.error("Failed to send message:", e);
   }
 }
@@ -408,22 +410,43 @@ refreshOrdersBtn.onclick = loadOrders;
 
 // ─── Reactions ───────────────────────────────────────────────────────────────
 function renderReactions(msgId, reactions) {
+  // Use data-* attributes instead of inline onclick to avoid emoji injection
   const pills = reactions.map(r =>
     `<button class="reaction-pill${r.reacted_by_me ? " active" : ""}"
-             onclick="toggleReaction(${msgId},'${r.emoji}')"
-    >${r.emoji} ${r.count}</button>`
+             data-msg-id="${msgId}" data-emoji="${escapeHtml(r.emoji)}" data-action="react"
+    >${escapeHtml(r.emoji)} ${r.count}</button>`
   ).join("");
   const pickerBtns = EMOJI_OPTIONS.map(e =>
-    `<button onclick="toggleReaction(${msgId},'${e}');closePicker(${msgId})">${e}</button>`
+    `<button data-msg-id="${msgId}" data-emoji="${escapeHtml(e)}" data-action="react-pick">${e}</button>`
   ).join("");
   return `<div class="reactions" id="reactions-${msgId}">
     ${pills}
     <div class="reaction-picker-wrap">
-      <button class="reaction-add" onclick="togglePicker(${msgId})">＋</button>
+      <button class="reaction-add" data-msg-id="${msgId}" data-action="open-picker">＋</button>
       <div class="reaction-picker hidden" id="picker-${msgId}">${pickerBtns}</div>
     </div>
   </div>`;
 }
+
+// Single delegated handler for all reaction interactions
+document.addEventListener("click", async (e) => {
+  const action = e.target.dataset.action;
+  const msgId  = e.target.dataset.msgId;
+
+  if (action === "react" || action === "react-pick") {
+    const emoji = e.target.dataset.emoji;
+    if (action === "react-pick") closePicker(msgId);
+    await toggleReaction(msgId, emoji);
+  } else if (action === "open-picker") {
+    document.querySelectorAll(".reaction-picker:not(.hidden)").forEach(p => {
+      if (p.id !== `picker-${msgId}`) p.classList.add("hidden");
+    });
+    document.getElementById(`picker-${msgId}`)?.classList.toggle("hidden");
+    e.stopPropagation();
+  } else if (!e.target.closest(".reaction-picker-wrap")) {
+    document.querySelectorAll(".reaction-picker:not(.hidden)").forEach(p => p.classList.add("hidden"));
+  }
+});
 
 async function toggleReaction(msgId, emoji) {
   try {
@@ -433,22 +456,9 @@ async function toggleReaction(msgId, emoji) {
   } catch (e) { console.error(e); }
 }
 
-function togglePicker(msgId) {
-  document.querySelectorAll(".reaction-picker:not(.hidden)").forEach(p => {
-    if (p.id !== `picker-${msgId}`) p.classList.add("hidden");
-  });
-  document.getElementById(`picker-${msgId}`)?.classList.toggle("hidden");
-}
-
 function closePicker(msgId) {
   document.getElementById(`picker-${msgId}`)?.classList.add("hidden");
 }
-
-document.addEventListener("click", (e) => {
-  if (!e.target.closest(".reaction-picker-wrap")) {
-    document.querySelectorAll(".reaction-picker:not(.hidden)").forEach(p => p.classList.add("hidden"));
-  }
-});
 
 function handleReactionUpdate(data) {
   const el = document.getElementById(`reactions-${data.message_id}`);
