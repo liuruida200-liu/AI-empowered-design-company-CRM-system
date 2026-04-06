@@ -1,6 +1,6 @@
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, Tuple
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 from fastapi import HTTPException, status, Depends
@@ -39,3 +39,15 @@ def get_current_user_token(credentials: HTTPAuthorizationCredentials = Depends(s
         return username
     except JWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+def decode_token(token: str) -> Tuple[str, str]:
+    """Decode a JWT and return (username, role). Raises ValueError on failure."""
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        role: str = payload.get("role", "customer")
+        if username is None:
+            raise ValueError("Invalid token")
+        return username, role
+    except JWTError:
+        raise ValueError("Invalid token")

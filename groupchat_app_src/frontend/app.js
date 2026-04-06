@@ -5,6 +5,7 @@ const authScreen      = $("auth");
 const appEl           = $("app");
 const usernameInput   = $("username");
 const passwordInput   = $("password");
+const roleSelect      = $("roleSelect");
 const authMsg         = $("authMsg");
 const loginBtn        = $("loginBtn");
 const signupBtn       = $("signupBtn");
@@ -15,6 +16,7 @@ const showCreateRoom  = $("showCreateRoom");
 const createRoomForm  = $("createRoomForm");
 const roomNameInput   = $("roomName");
 const roomDescInput   = $("roomDesc");
+const roomTypeSelect  = $("roomType");
 const createRoomBtn   = $("createRoomBtn");
 const cancelCreateRoom= $("cancelCreateRoom");
 const roomMsg         = $("roomMsg");
@@ -23,20 +25,46 @@ const emptyState      = $("emptyState");
 const chatView        = $("chatView");
 const currentRoomName = $("currentRoomName");
 const currentRoomDesc = $("currentRoomDesc");
+const roomTypeBadge   = $("roomTypeBadge");
 const leaveRoomBtn    = $("leaveRoomBtn");
 const messagesDiv     = $("messages");
 const chatInput       = $("chatInput");
 const sendBtn         = $("sendBtn");
+const typingIndicator = $("typingIndicator");
+const searchInput     = $("searchInput");
+const searchClearBtn  = $("searchClearBtn");
+const orderPanel      = $("orderPanel");
+const refreshOrdersBtn= $("refreshOrdersBtn");
 
 // ─── State ───────────────────────────────────────────────────────────────────
 const API = location.origin + "/api";
 let token        = localStorage.getItem("token") || "";
 let currentUser  = localStorage.getItem("username") || "";
-let activeRoomId = null;     // room the user is currently viewing
-let joinedRooms  = new Set(); // room IDs the user has joined
-let allRooms     = [];        // latest room list from server
+let currentRole  = localStorage.getItem("role") || "customer";
+let activeRoomId = null;
+let activeRoomType = "general";
+let joinedRooms  = new Set();
+let allRooms     = [];
 let ws;
-let unreadCounts = {}; // room_id -> count
+let unreadCounts = {};
+let mentionRooms = new Set();
+
+// Feature state
+let onlineUsers    = new Set();
+let typingUsers    = {};
+let typingDebounce = null;
+let searchDebounce = null;
+let searchQuery    = "";
+
+const EMOJI_OPTIONS = ["👍", "❤️", "😂", "😮", "😢", "🎉"];
+
+const ROOM_TYPE_LABELS = {
+  customer_sales:   "Customer ↔ Sales",
+  sales_production: "Sales ↔ Production",
+  general:          "General",
+};
+
+const STATUS_ORDER = ["draft", "pending", "in_production", "completed", "cancelled"];
 
 // ─── API helper ──────────────────────────────────────────────────────────────
 async function callAPI(path, method = "GET", body) {
@@ -62,6 +90,15 @@ function showApp() {
   appEl.classList.remove("hidden");
 }
 
+function saveSession(out, username) {
+  token = out.token;
+  currentUser = username;
+  currentRole = out.role || "customer";
+  localStorage.setItem("token", token);
+  localStorage.setItem("username", currentUser);
+  localStorage.setItem("role", currentRole);
+}
+
 loginBtn.onclick = async () => {
   authMsg.textContent = "";
   try {
@@ -69,10 +106,7 @@ loginBtn.onclick = async () => {
       username: usernameInput.value.trim(),
       password: passwordInput.value,
     });
-    token = out.token;
-    currentUser = usernameInput.value.trim();
-    localStorage.setItem("token", token);
-    localStorage.setItem("username", currentUser);
+    saveSession(out, usernameInput.value.trim());
     await initApp();
   } catch (e) {
     authMsg.textContent = e.message;
@@ -85,11 +119,9 @@ signupBtn.onclick = async () => {
     const out = await callAPI("/signup", "POST", {
       username: usernameInput.value.trim(),
       password: passwordInput.value,
+      role: roleSelect.value,
     });
-    token = out.token;
-    currentUser = usernameInput.value.trim();
-    localStorage.setItem("token", token);
-    localStorage.setItem("username", currentUser);
+    saveSession(out, usernameInput.value.trim());
     await initApp();
   } catch (e) {
     authMsg.textContent = e.message;
@@ -97,12 +129,12 @@ signupBtn.onclick = async () => {
 };
 
 logoutBtn.onclick = () => {
-  token = "";
-  currentUser = "";
+  token = ""; currentUser = ""; currentRole = "customer";
   activeRoomId = null;
-  joinedRooms.clear();
+  joinedRooms.clear(); onlineUsers.clear();
   localStorage.removeItem("token");
   localStorage.removeItem("username");
+  localStorage.removeItem("role");
   if (ws) ws.close();
   showAuth();
 };
@@ -110,12 +142,21 @@ logoutBtn.onclick = () => {
 // ─── App init ────────────────────────────────────────────────────────────────
 async function initApp() {
   $("sidebarUsername").textContent = currentUser;
+  const roleEl = $("sidebarRole");
+  roleEl.textContent = currentRole;
+  roleEl.className = `role-badge ${currentRole}`;
   showApp();
+  requestNotificationPermission();
   await loadMyRooms();
   await loadRooms();
+  await loadOrders();
   connectWS();
 
-  // Restore last active room
+  try {
+    const data = await callAPI("/users/online");
+    for (const username of (data.usernames || [])) onlineUsers.add(username);
+  } catch (e) {}
+
   const lastRoomId = parseInt(localStorage.getItem("lastRoomId"));
   if (lastRoomId) {
     const room = allRooms.find(r => r.id === lastRoomId);
@@ -126,9 +167,7 @@ async function initApp() {
 async function loadMyRooms() {
   try {
     const data = await callAPI("/rooms/my");
-    for (const room of data.rooms) {
-      joinedRooms.add(room.id);
-    }
+    for (const room of data.rooms) joinedRooms.add(room.id);
   } catch (e) {
     console.error("Failed to load my rooms:", e);
   }
@@ -152,9 +191,10 @@ function renderRoomList() {
     return;
   }
   for (const room of allRooms) {
-    const isMember = joinedRooms.has(room.id);
-    const isActive = room.id === activeRoomId;
-    const unread = unreadCounts[room.id] || 0;
+    const isMember  = joinedRooms.has(room.id);
+    const isActive  = room.id === activeRoomId;
+    const unread    = unreadCounts[room.id] || 0;
+    const isMention = mentionRooms.has(room.id);
 
     const li = document.createElement("li");
     li.className = "room-item" + (isActive ? " active" : "");
@@ -163,7 +203,7 @@ function renderRoomList() {
       <span class="room-item-hash">#</span>
       <span class="room-item-name">${escapeHtml(room.name)}</span>
       ${!isMember ? `<span class="room-join-badge">join</span>` : ""}
-      ${isMember && unread > 0 ? `<span class="unread-badge">${unread}</span>` : ""}
+      ${isMember && unread > 0 ? `<span class="unread-badge${isMention ? " mention" : ""}">${unread}</span>` : ""}
     `;
     li.onclick = () => handleRoomClick(room);
     roomList.appendChild(li);
@@ -171,7 +211,6 @@ function renderRoomList() {
 }
 
 async function handleRoomClick(room) {
-  // If not a member yet, join first
   if (!joinedRooms.has(room.id)) {
     try {
       await callAPI(`/rooms/${room.id}/join`, "POST");
@@ -186,34 +225,49 @@ async function handleRoomClick(room) {
 
 async function switchRoom(room) {
   activeRoomId = room.id;
+  activeRoomType = room.type || "general";
   localStorage.setItem("lastRoomId", room.id);
   unreadCounts[room.id] = 0;
-  
-  // Update header
+  mentionRooms.delete(room.id);
+
+  typingUsers = {};
+  updateTypingIndicator();
+  searchQuery = "";
+  searchInput.value = "";
+  searchClearBtn.classList.add("hidden");
+
   currentRoomName.textContent = room.name;
   currentRoomDesc.textContent = room.description || "";
 
-  // Show chat view, hide empty state
+  // Room type badge
+  if (room.type && room.type !== "general") {
+    roomTypeBadge.textContent = ROOM_TYPE_LABELS[room.type] || room.type;
+    roomTypeBadge.className = `room-type-badge ${room.type}`;
+    roomTypeBadge.classList.remove("hidden");
+  } else {
+    roomTypeBadge.classList.add("hidden");
+  }
+
   emptyState.classList.add("hidden");
   chatView.classList.remove("hidden");
 
-  // Notify WebSocket server which room this connection is viewing
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: "join_room", room_id: room.id }));
   }
 
-  // Load message history
   await loadMessages(room.id);
-
-  // Re-render sidebar to update active highlight
   renderRoomList();
 }
 
-async function loadMessages(roomId) {
+async function loadMessages(roomId, search = "") {
   messagesDiv.innerHTML = "";
   try {
-    const data = await callAPI(`/rooms/${roomId}/messages`);
+    const qs = search ? `?search=${encodeURIComponent(search)}` : "";
+    const data = await callAPI(`/rooms/${roomId}/messages${qs}`);
     for (const m of data.messages) addMessage(m);
+    if (search && data.messages.length === 0) {
+      messagesDiv.innerHTML = `<div style="text-align:center;color:var(--text-muted);padding:20px;font-size:13px">No results for "${escapeHtml(search)}"</div>`;
+    }
   } catch (e) {
     console.error("Failed to load messages:", e);
   }
@@ -241,11 +295,11 @@ createRoomBtn.onclick = async () => {
     const out = await callAPI("/rooms", "POST", {
       name,
       description: roomDescInput.value.trim() || null,
+      type: roomTypeSelect.value,
     });
-    // Creator is auto-joined by the backend
     joinedRooms.add(out.room.id);
     allRooms.push(out.room);
-    cancelCreateRoom.onclick(); // reset form
+    cancelCreateRoom.onclick();
     await switchRoom(out.room);
   } catch (e) {
     roomMsg.textContent = e.message;
@@ -270,28 +324,40 @@ leaveRoomBtn.onclick = async () => {
 // ─── Messages ────────────────────────────────────────────────────────────────
 function addMessage(m) {
   if (m.room_id !== activeRoomId) {
-    // Message arrived in a background room — increment unread
     unreadCounts[m.room_id] = (unreadCounts[m.room_id] || 0) + 1;
+    if (new RegExp(`@${currentUser}\\b`).test(m.content)) mentionRooms.add(m.room_id);
     renderRoomList();
+    showBrowserNotification(m);
     return;
   }
+
   const el = document.createElement("div");
   el.className = "message" + (m.is_bot ? " bot" : "");
+  el.dataset.msgId = m.id;
   const time = new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const isOnline = onlineUsers.has(m.username);
   el.innerHTML = `
     <div class="meta">
-      <span class="author">${escapeHtml(m.username || "unknown")}</span>
+      <span class="author${isOnline ? " online" : ""}" data-username="${escapeHtml(m.username || "")}">${escapeHtml(m.username || "unknown")}</span>
       &nbsp;·&nbsp;${time}
     </div>
-    <div class="body">${escapeHtml(m.content)}</div>
+    <div class="body">${renderContent(m.content)}</div>
+    ${renderReactions(m.id, m.reactions || [])}
   `;
   messagesDiv.appendChild(el);
   messagesDiv.scrollTop = messagesDiv.scrollHeight;
 }
 
-// Send message
 sendBtn.onclick = sendMessage;
 chatInput.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) sendMessage(); };
+
+chatInput.oninput = () => {
+  if (ws && ws.readyState === WebSocket.OPEN && activeRoomId) {
+    if (typingDebounce) return;
+    ws.send(JSON.stringify({ type: "typing", room_id: activeRoomId }));
+    typingDebounce = setTimeout(() => { typingDebounce = null; }, 1000);
+  }
+};
 
 async function sendMessage() {
   const text = chatInput.value.trim();
@@ -304,29 +370,185 @@ async function sendMessage() {
   }
 }
 
+// ─── Orders Panel ────────────────────────────────────────────────────────────
+async function loadOrders() {
+  try {
+    const endpoint = currentRole === "customer" ? "/orders/my" : "/orders";
+    const data = await callAPI(endpoint);
+    renderOrderPanel(data.orders || []);
+  } catch (e) {
+    console.error("Failed to load orders:", e);
+  }
+}
+
+function renderOrderPanel(orders) {
+  if (orders.length === 0) {
+    orderPanel.innerHTML = `<div class="order-empty">No orders yet</div>`;
+    return;
+  }
+  // Show latest 6, sorted by status priority for non-customers
+  const display = orders.slice(0, 6);
+  orderPanel.innerHTML = display.map(o => {
+    const customerLine = (currentRole !== "customer" && o.customer_username)
+      ? `<div class="order-item-customer">👤 ${escapeHtml(o.customer_username)}</div>`
+      : "";
+    return `<div class="order-item">
+      <div class="order-item-header">
+        <span class="order-id">#${o.id}</span>
+        <span class="order-status status-${o.status}">${o.status.replace("_", " ")}</span>
+      </div>
+      <div class="order-item-desc">${escapeHtml(o.material)} · ${escapeHtml(o.size)} × ${o.quantity}</div>
+      ${o.total_price ? `<div class="order-item-price">¥${o.total_price.toLocaleString()}</div>` : ""}
+      ${customerLine}
+    </div>`;
+  }).join("");
+}
+
+refreshOrdersBtn.onclick = loadOrders;
+
+// ─── Reactions ───────────────────────────────────────────────────────────────
+function renderReactions(msgId, reactions) {
+  const pills = reactions.map(r =>
+    `<button class="reaction-pill${r.reacted_by_me ? " active" : ""}"
+             onclick="toggleReaction(${msgId},'${r.emoji}')"
+    >${r.emoji} ${r.count}</button>`
+  ).join("");
+  const pickerBtns = EMOJI_OPTIONS.map(e =>
+    `<button onclick="toggleReaction(${msgId},'${e}');closePicker(${msgId})">${e}</button>`
+  ).join("");
+  return `<div class="reactions" id="reactions-${msgId}">
+    ${pills}
+    <div class="reaction-picker-wrap">
+      <button class="reaction-add" onclick="togglePicker(${msgId})">＋</button>
+      <div class="reaction-picker hidden" id="picker-${msgId}">${pickerBtns}</div>
+    </div>
+  </div>`;
+}
+
+async function toggleReaction(msgId, emoji) {
+  try {
+    const res = await callAPI(`/messages/${msgId}/reactions`, "POST", { emoji });
+    const el = document.getElementById(`reactions-${msgId}`);
+    if (el) el.outerHTML = renderReactions(msgId, res.reactions);
+  } catch (e) { console.error(e); }
+}
+
+function togglePicker(msgId) {
+  document.querySelectorAll(".reaction-picker:not(.hidden)").forEach(p => {
+    if (p.id !== `picker-${msgId}`) p.classList.add("hidden");
+  });
+  document.getElementById(`picker-${msgId}`)?.classList.toggle("hidden");
+}
+
+function closePicker(msgId) {
+  document.getElementById(`picker-${msgId}`)?.classList.add("hidden");
+}
+
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".reaction-picker-wrap")) {
+    document.querySelectorAll(".reaction-picker:not(.hidden)").forEach(p => p.classList.add("hidden"));
+  }
+});
+
+function handleReactionUpdate(data) {
+  const el = document.getElementById(`reactions-${data.message_id}`);
+  if (el) el.outerHTML = renderReactions(data.message_id, data.reactions);
+}
+
+// ─── Typing Indicator ────────────────────────────────────────────────────────
+function handleTyping(data) {
+  if (data.room_id !== activeRoomId) return;
+  const { username } = data;
+  if (typingUsers[username]) clearTimeout(typingUsers[username]);
+  typingUsers[username] = setTimeout(() => {
+    delete typingUsers[username];
+    updateTypingIndicator();
+  }, 3000);
+  updateTypingIndicator();
+}
+
+function updateTypingIndicator() {
+  const names = Object.keys(typingUsers);
+  if (names.length === 0) {
+    typingIndicator.classList.add("hidden");
+  } else {
+    const text = names.length === 1
+      ? `${names[0]} is typing…`
+      : `${names.slice(0, -1).join(", ")} and ${names.at(-1)} are typing…`;
+    typingIndicator.textContent = text;
+    typingIndicator.classList.remove("hidden");
+  }
+}
+
+// ─── Online Status ───────────────────────────────────────────────────────────
+function handleUserOnline(data) {
+  onlineUsers.add(data.username);
+  document.querySelectorAll(`.author[data-username="${CSS.escape(data.username)}"]`)
+    .forEach(el => el.classList.add("online"));
+}
+
+function handleUserOffline(data) {
+  onlineUsers.delete(data.username);
+  document.querySelectorAll(`.author[data-username="${CSS.escape(data.username)}"]`)
+    .forEach(el => el.classList.remove("online"));
+}
+
+// ─── Browser Notifications ───────────────────────────────────────────────────
+function requestNotificationPermission() {
+  if ("Notification" in window && Notification.permission === "default") {
+    Notification.requestPermission();
+  }
+}
+
+function showBrowserNotification(m) {
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  if (document.hasFocus()) return;
+  const room = allRooms.find(r => r.id === m.room_id);
+  new Notification(`New message in #${room ? room.name : "unknown"}`, {
+    body: `${m.username}: ${m.content.slice(0, 100)}`,
+  });
+}
+
+// ─── Search ──────────────────────────────────────────────────────────────────
+searchInput.oninput = function () {
+  clearTimeout(searchDebounce);
+  searchQuery = this.value.trim();
+  searchClearBtn.classList.toggle("hidden", !searchQuery);
+  searchDebounce = setTimeout(() => {
+    if (activeRoomId) loadMessages(activeRoomId, searchQuery);
+  }, 400);
+};
+
+searchClearBtn.onclick = () => {
+  searchInput.value = "";
+  searchQuery = "";
+  searchClearBtn.classList.add("hidden");
+  if (activeRoomId) loadMessages(activeRoomId);
+};
+
 // ─── WebSocket ────────────────────────────────────────────────────────────────
 function connectWS() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
-  ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws = new WebSocket(`${proto}://${location.host}/ws?token=${encodeURIComponent(token)}`);
 
   ws.onopen = () => {
-    // If a room is already active (e.g. after reconnect), re-join it
-    if (activeRoomId) {
-      ws.send(JSON.stringify({ type: "join_room", room_id: activeRoomId }));
-    }
+    if (activeRoomId) ws.send(JSON.stringify({ type: "join_room", room_id: activeRoomId }));
   };
 
   ws.onmessage = (ev) => {
     try {
       const data = JSON.parse(ev.data);
-      if (data.type === "message") addMessage(data.message);
+      switch (data.type) {
+        case "message":         addMessage(data.message);       break;
+        case "user_online":     handleUserOnline(data);         break;
+        case "user_offline":    handleUserOffline(data);        break;
+        case "typing":          handleTyping(data);             break;
+        case "reaction_update": handleReactionUpdate(data);     break;
+      }
     } catch (e) {}
   };
 
-  ws.onclose = () => {
-    // Reconnect after 2 seconds
-    setTimeout(connectWS, 2000);
-  };
+  ws.onclose = () => setTimeout(connectWS, 2000);
 }
 
 // ─── Utilities ───────────────────────────────────────────────────────────────
@@ -336,6 +558,13 @@ function escapeHtml(str) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function renderContent(content) {
+  return escapeHtml(content).replace(/@(\w+)/g, (match, username) => {
+    const cls = username === currentUser ? "mention mention-me" : "mention";
+    return `<span class="${cls}">${match}</span>`;
+  });
 }
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────

@@ -401,3 +401,251 @@ body {
   justify-content: center;
   flex-shrink: 0;
 }
+.unread-badge.mention { background: #ef4444; }
+
+/* ── Online Status ────────────────────────────────────────────── */
+.author { position: relative; }
+.author.online::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  right: -8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 4px #22c55e;
+}
+
+/* ── Typing Indicator ─────────────────────────────────────────── */
+.typing-indicator {
+  padding: 6px 20px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+/* ── Search ───────────────────────────────────────────────────── */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.search-box .field { width: 160px; padding-right: 28px; }
+.search-clear {
+  position: absolute;
+  right: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 2px;
+}
+
+/* ── Reactions ────────────────────────────────────────────────── */
+.reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+  align-items: center;
+}
+.reaction-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+.reaction-pill:hover { border-color: var(--accent); }
+.reaction-pill.active {
+  background: rgba(59,130,246,0.15);
+  border-color: var(--accent);
+  color: var(--text);
+}
+.reaction-picker-wrap { position: relative; }
+.reaction-add {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--surface2);
+  border: 1px dashed var(--border);
+  color: var(--text-muted);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.12s, color 0.12s;
+}
+.reaction-add:hover { border-color: var(--accent); color: var(--accent); }
+.reaction-picker {
+  position: absolute;
+  bottom: 30px;
+  left: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 6px;
+  display: flex;
+  gap: 4px;
+  z-index: 10;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+.reaction-picker button {
+  font-size: 18px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 3px;
+  border-radius: 6px;
+  transition: background 0.1s;
+}
+.reaction-picker button:hover { background: var(--surface2); }
+
+/* ── Mentions ─────────────────────────────────────────────────── */
+.mention {
+  color: var(--accent);
+  background: rgba(59,130,246,0.1);
+  border-radius: 4px;
+  padding: 0 3px;
+  font-weight: 500;
+}
+.mention-me {
+  color: #f59e0b;
+  background: rgba(245,158,11,0.12);
+  border-radius: 4px;
+  padding: 0 3px;
+  font-weight: 600;
+}
+
+/* ── Role Badge ───────────────────────────────────────────────── */
+.sidebar-user-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.role-badge {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.role-badge.customer    { background: rgba(59,130,246,0.2);  color: #60a5fa; }
+.role-badge.salesperson { background: rgba(16,185,129,0.2);  color: #34d399; }
+.role-badge.production  { background: rgba(245,158,11,0.2);  color: #fbbf24; }
+.role-badge.admin       { background: rgba(239,68,68,0.2);   color: #f87171; }
+
+/* ── Room Type Badge ──────────────────────────────────────────── */
+.chat-room-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.room-type-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.room-type-badge.customer_sales    { background: rgba(59,130,246,0.15); color: #60a5fa; }
+.room-type-badge.sales_production  { background: rgba(245,158,11,0.15); color: #fbbf24; }
+.room-type-badge.general           { background: rgba(100,116,139,0.2); color: #94a3b8; }
+
+/* ── Auth role hint ───────────────────────────────────────────── */
+.role-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 0 2px;
+}
+
+/* ── Orders Panel ─────────────────────────────────────────────── */
+.orders-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.btn-icon-sm {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: color 0.15s;
+}
+.btn-icon-sm:hover { color: var(--accent); }
+
+.order-empty {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 6px 4px;
+}
+
+.order-item {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+.order-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.order-id {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.order-item-desc {
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.order-item-price {
+  margin-top: 3px;
+  color: var(--accent);
+  font-weight: 600;
+}
+.order-item-customer {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ── Order Status Badges ──────────────────────────────────────── */
+.order-status {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.status-draft         { background: rgba(100,116,139,0.2); color: #94a3b8; }
+.status-pending       { background: rgba(245,158,11,0.2);  color: #fbbf24; }
+.status-in_production { background: rgba(59,130,246,0.2);  color: #60a5fa; }
+.status-completed     { background: rgba(16,185,129,0.2);  color: #34d399; }
+.status-cancelled     { background: rgba(239,68,68,0.2);   color: #f87171; }

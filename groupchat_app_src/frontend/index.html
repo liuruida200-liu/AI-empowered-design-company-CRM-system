@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Group Chat</title>
+  <title>Design CRM</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -16,12 +16,19 @@
     <div class="auth-card">
       <div class="auth-brand">
         <span class="brand-dot"></span>
-        <h1>GroupChat</h1>
+        <h1>Design CRM</h1>
       </div>
       <p class="auth-sub">Sign in or create an account to continue.</p>
       <div class="field-group">
         <input id="username" class="field" placeholder="Username" autocomplete="off">
         <input id="password" class="field" placeholder="Password" type="password">
+        <select id="roleSelect" class="field" title="Select role (for new accounts)">
+          <option value="customer">Customer</option>
+          <option value="salesperson">Salesperson</option>
+          <option value="production">Production</option>
+          <option value="admin">Admin</option>
+        </select>
+        <div class="role-hint">Role applies to Sign Up only</div>
       </div>
       <div class="btn-row">
         <button class="btn btn-primary" id="loginBtn">Log In</button>
@@ -39,8 +46,11 @@
       <div class="sidebar-header">
         <span class="brand-dot small"></span>
         <div class="sidebar-identity">
-          <span class="sidebar-title">GroupChat</span>
-          <span class="sidebar-username" id="sidebarUsername"></span>
+          <span class="sidebar-title">Design CRM</span>
+          <div class="sidebar-user-row">
+            <span class="sidebar-username" id="sidebarUsername"></span>
+            <span class="role-badge" id="sidebarRole"></span>
+          </div>
         </div>
         <button class="btn-icon" id="logoutBtn" title="Log out">⏻</button>
       </div>
@@ -57,6 +67,11 @@
         <div class="create-room-form hidden" id="createRoomForm">
           <input class="field small" id="roomName" placeholder="Room name">
           <input class="field small" id="roomDesc" placeholder="Description (optional)">
+          <select class="field small" id="roomType">
+            <option value="general">General</option>
+            <option value="customer_sales">Customer ↔ Sales</option>
+            <option value="sales_production">Sales ↔ Production</option>
+          </select>
           <div class="btn-row tight">
             <button class="btn btn-primary small" id="createRoomBtn">Create</button>
             <button class="btn btn-ghost small" id="cancelCreateRoom">Cancel</button>
@@ -64,6 +79,18 @@
           <div id="roomMsg" class="auth-error"></div>
         </div>
       </div>
+
+      <!-- Orders Panel -->
+      <div class="sidebar-section" id="ordersPanelSection">
+        <div class="section-label orders-label">
+          Orders
+          <button class="btn-icon-sm" id="refreshOrdersBtn" title="Refresh">↻</button>
+        </div>
+        <div id="orderPanel">
+          <div class="order-empty">No orders yet</div>
+        </div>
+      </div>
+
     </aside>
 
     <!-- Main chat area -->
@@ -79,13 +106,24 @@
       <div class="chat-view hidden" id="chatView">
         <header class="chat-header">
           <div class="chat-room-info">
-            <span class="chat-room-name" id="currentRoomName"></span>
+            <div class="chat-room-title-row">
+              <span class="chat-room-name" id="currentRoomName"></span>
+              <span class="room-type-badge hidden" id="roomTypeBadge"></span>
+            </div>
             <span class="chat-room-desc" id="currentRoomDesc"></span>
           </div>
-          <button class="btn btn-ghost small" id="leaveRoomBtn">Leave</button>
+          <div class="header-actions">
+            <div class="search-box">
+              <input class="field small" id="searchInput" placeholder="Search…" autocomplete="off">
+              <button class="btn-icon search-clear hidden" id="searchClearBtn">✕</button>
+            </div>
+            <button class="btn btn-ghost small" id="leaveRoomBtn">Leave</button>
+          </div>
         </header>
 
         <div class="messages" id="messages"></div>
+
+        <div class="typing-indicator hidden" id="typingIndicator"></div>
 
         <div class="composer">
           <input class="field composer-input" id="chatInput" placeholder="Type a message…" autocomplete="off">
