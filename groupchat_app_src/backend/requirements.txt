@@ -8,3 +8,7 @@ python-dotenv
 httpx
 jinja2
 bcrypt==4.0.1
+python-multipart
+pypdf
+sentence-transformers
+chromadb

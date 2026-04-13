@@ -1,4 +1,6 @@
+import io
 import os
+import re
 import uuid
 import asyncio
 from pathlib import Path
@@ -15,6 +17,7 @@ from db import SessionLocal, init_db, User, Message, Room, RoomMember, MessageRe
 from auth import get_password_hash, verify_password, create_access_token, get_current_user_token, decode_token
 from websocket_manager import ConnectionManager
 from llm import chat_completion, generate_image, image_server_available
+from embedding import embed_document, retrieve_relevant_chunks
 
 load_dotenv()
 
@@ -57,6 +60,28 @@ IMAGE_KEYWORDS = {
     "generate design", "画一张", "帮我画", "show me", "visualize",
     "参考图", "样图", "出图",
 }
+
+
+# ─────────────────────────── File text extraction ───────────────
+
+def _extract_pdf_text(data: bytes, max_chars: int = 3000) -> str:
+    try:
+        from pypdf import PdfReader
+        reader = PdfReader(io.BytesIO(data))
+        text = ""
+        for page in reader.pages:
+            text += (page.extract_text() or "") + "\n"
+            if len(text) >= max_chars:
+                break
+        return text[:max_chars].strip()
+    except Exception:
+        return ""
+
+def _extract_txt_text(data: bytes, max_chars: int = 3000) -> str:
+    try:
+        return data.decode("utf-8", errors="replace")[:max_chars].strip()
+    except Exception:
+        return ""
 
 
 # ─────────────────────────── Schemas ────────────────────────────
@@ -287,6 +312,16 @@ async def maybe_answer_with_llm(
                 f"lead time {cap.lead_time_days} days. {cap.notes or ''}"
             )
 
+    # ── RAG: retrieve relevant chunks from uploaded files ─────
+    file_context = ""
+    if has_question:
+        import asyncio as _asyncio
+        chunks = await _asyncio.get_event_loop().run_in_executor(
+            None, retrieve_relevant_chunks, content, room_id, 5
+        )
+        if chunks:
+            file_context = "Relevant excerpts from uploaded documents:\n" + "\n---\n".join(chunks)
+
     # ── Build system prompt ────────────────────────────────────
     room_desc = {
         "customer_sales":   "a customer-salesperson conversation room",
@@ -301,7 +336,7 @@ async def maybe_answer_with_llm(
         "admin":        "The user is an admin. Provide comprehensive information.",
     }.get(sender_role or "customer", "")
 
-    context_blocks = "\n\n".join(filter(None, [orders_context, similar_context, pricing_context]))
+    context_blocks = "\n\n".join(filter(None, [orders_context, similar_context, pricing_context, file_context]))
 
     system_prompt = f"""You are an AI assistant for a design company CRM system.
 
@@ -316,7 +351,8 @@ Guidelines:
 - For pricing questions, reference similar past orders and production capabilities above.
 - For order status, reference the user's recent orders above.
 - When you suggest a price, show the calculation (e.g., 1.2m × 2.4m = 2.88 sqm × ¥120 = ¥345.60).
-- Keep responses concise and practical."""
+- Keep responses concise and practical.
+- If uploaded file contents are provided above, reference them when answering related questions."""
 
     # ── Text response ──────────────────────────────────────────
     if has_question:
@@ -969,9 +1005,18 @@ async def upload_file(
     if file.content_type.startswith("image/"):
         content = f"[img]{url}[/img]"
     elif file.content_type == "application/pdf":
+        extracted = _extract_pdf_text(data)
         content = f"[pdf]{url}|{original_name}[/pdf]"
     else:
+        extracted = _extract_txt_text(data)
         content = f"[txt]{url}|{original_name}[/txt]"
+
+    # Embed PDF/TXT into vector store for RAG (run in thread, await completion)
+    if not file.content_type.startswith("image/") and extracted:
+        import asyncio as _asyncio
+        await _asyncio.get_event_loop().run_in_executor(
+            None, embed_document, filename, room_id, original_name, extracted
+        )
 
     msg = Message(room_id=room_id, user_id=current_user.id, content=content, is_bot=False)
     session.add(msg)

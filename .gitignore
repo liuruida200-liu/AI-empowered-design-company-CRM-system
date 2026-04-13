@@ -2,3 +2,8 @@
 __pycache__/
 .env
 .claude/
+groupchat_app_src/backend/chroma_db/
+groupchat_app_src/uploads/*
+!groupchat_app_src/uploads/.gitkeep
+groupchat_app_src/images/*
+!groupchat_app_src/images/.gitkeep

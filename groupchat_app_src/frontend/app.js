@@ -748,6 +748,9 @@ function escapeHtml(str) {
 }
 
 function renderContent(content) {
+  // Strip [context] tags — AI-only, not shown to users
+  content = content.replace(/\[context\][\s\S]*?\[\/context\]/g, "").trim();
+
   // Use placeholders so we can HTML-escape safely then restore as HTML tags
   const PH = [];
   const placeholder = (html) => { PH.push(html); return `\x00${PH.length - 1}\x00`; };

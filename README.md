@@ -1,154 +1,127 @@
 # AI-Empowered Design Company CRM System
 
-An AI-assisted CRM and collaboration system for design-and-print companies that create banners, roll-up banners, posters, social media posts, and other custom marketing materials.
+A real-time group chat CRM system with an embedded AI assistant, built for design and print companies. It connects customers, sales staff, and production teams in one platform — with an LLM bot that answers questions, suggests quotes, and tracks orders.
 
-## Overview
+---
 
-Many design and production companies spend too much time going back and forth with customers before an order is ready for production. In many cases, customers do not begin with a complete or feasible plan. This creates long communication cycles between customers and sales staff just to finalize the draft, confirm design requirements, choose materials, and estimate cost and delivery time.
+## Features
 
-This project aims to solve that problem by embedding an LLM-powered AI assistant directly into the sales and customer group chat workflow.
+- **Role-based access** — Customer, Salesperson, Production, Admin
+- **Room-based group chat** — Separate channels for customer-sales and sales-production workflows
+- **AI assistant** — LLM bot participates in chat to answer questions about pricing, materials, order status, and production capabilities
+- **Order management** — Create, view, and track orders with status updates
+- **Real-time updates** — WebSocket-powered messaging and typing indicators
+- **Emoji reactions** — React to messages
+- **Message search** — Search within any room
 
-## Problem
+---
 
-Design companies often face these challenges:
+## Tech Stack
 
-- Customers submit incomplete or unclear requirements
-- Sales teams spend a large amount of time clarifying design details
-- Quotation depends on past cases, materials, production effort, and partner capability
-- Information is fragmented across sales chats, production chats, and historical orders
-- Customers wait too long for simple answers such as pricing, feasibility, or progress updates
+| Layer | Technology |
+|---|---|
+| Backend | Python, FastAPI, SQLAlchemy (async) |
+| Database | MySQL |
+| Frontend | Vanilla HTML / CSS / JavaScript |
+| Real-time | WebSockets |
+| AI | OpenAI-compatible LLM API (e.g. llama.cpp, vLLM, OpenAI) |
+| Android | TWA (Trusted Web Activity) |
 
-## Proposed Solution
+---
 
-We are building a CRM system with an embedded AI assistant that participates in both customer-facing and internal communication channels.
+## Quick Start
 
-The AI assistant will help sales and operations teams by using company data and live production context to support faster, more accurate communication.
+### 1. Database
 
-## Core Capabilities
+Create a MySQL database and run the schema:
 
-### 1. Customer and Sales Chat Assistance
-The AI assistant will be embedded in the shared group chat between customers and sales staff. It will be able to:
+```bash
+mysql -u root -p < groupchat_app_src/sql/schema.sql
+```
 
-- Answer common questions instantly
-- Help clarify incomplete customer requirements
-- Suggest feasible design and material options
-- Recommend examples from similar past orders
-- Support sales staff in creating faster and more consistent replies
+### 2. Environment
 
-### 2. Historical Order Intelligence
-The AI assistant will have access to past order records, including:
+```bash
+cd groupchat_app_src
+cp .env.example .env
+```
 
-- Previous designs
-- Material choices
-- Price breakdowns
-- Time spent on communication and production
-- Outcomes from similar customer requests
+Edit `.env` with your values:
 
-This allows the assistant to provide reference cases and generate more realistic recommendations and quotations.
+```env
+DATABASE_URL=mysql+asyncmy://user:pass@localhost:3306/groupchat
+JWT_SECRET=your_random_secret
+LLM_API_BASE=http://localhost:8001/v1
+LLM_MODEL=llama-3-8b-instruct
+LLM_API_KEY=
+```
 
-### 3. Quotation Support
-Based on historical data and current requirements, the AI assistant can help with:
+### 3. Backend
 
-- Initial quotation estimates
-- Material-based pricing suggestions
-- Design and production cost references
-- Feasibility checks before final confirmation
+```bash
+cd groupchat_app_src/backend
+python -m venv .venv
+# Windows:
+.venv\Scripts\activate
+# macOS/Linux:
+source .venv/bin/activate
 
-### 4. Manufacturing Partner Awareness
-The assistant will also understand the capabilities of manufacturing partners, such as:
+pip install -r requirements.txt
+uvicorn app:app --host 0.0.0.0 --port 8000
+```
 
-- Supported materials
-- Production limits
-- Available equipment or processes
-- Turnaround constraints
+### 4. Seed demo data (optional)
 
-This helps ensure that proposed solutions are not only attractive but also practical and manufacturable.
+```bash
+python seed.py
+```
 
-### 5. Production Progress Visibility
-The AI assistant can also access internal production division chats and updates in order to:
+Demo accounts (password: `demo1234`):
 
-- Track live production progress
-- Answer customer questions about order status
-- Reduce manual follow-up work from staff
-- Provide faster and more transparent updates
+| Username | Role |
+|---|---|
+| alice | Customer |
+| bob | Customer |
+| carol | Salesperson |
+| dave | Production |
+| admin | Admin |
 
-## Vision
+### 5. Open the app
 
-Our vision is to create a smart CRM system that does more than store customer data. It actively helps teams close orders faster, reduce communication overhead, improve customer experience, and connect sales with real production capability.
+Visit [http://localhost:8000](http://localhost:8000)
 
-Instead of relying entirely on manual coordination, the AI assistant becomes a real-time support layer between:
+---
 
-- Customers
-- Sales staff
-- Designers
-- Production teams
-- Manufacturing partners
+## Project Structure
 
-## Expected Benefits
+```
+groupchat_app_src/
+├── backend/
+│   ├── app.py              # FastAPI routes and WebSocket handler
+│   ├── auth.py             # JWT authentication
+│   ├── db.py               # SQLAlchemy models
+│   ├── llm.py              # LLM integration
+│   ├── websocket_manager.py# Room-aware WebSocket manager
+│   ├── seed.py             # Demo data seeder
+│   └── requirements.txt
+├── frontend/
+│   ├── index.html
+│   ├── app.js
+│   └── styles.css
+├── sql/
+│   └── schema.sql
+├── twa_android_src/        # Android TWA wrapper
+└── .env.example
+```
 
-- Faster requirement clarification
-- Reduced workload for sales teams
-- More accurate and consistent quotations
-- Better use of past project knowledge
-- Improved communication between customer-facing and production teams
-- Faster response time for customer questions
-- Higher operational efficiency overall
+---
 
-## Example Use Cases
+## LLM Configuration
 
-- A customer asks for a roll-up banner but does not know the best material or size
-- The AI suggests possible options based on past similar orders
-- The AI provides a rough quote based on historical price breakdowns
-- The AI checks whether manufacturing partners can produce the requested item
-- The customer asks for progress, and the AI responds using live production updates
+The AI assistant uses any OpenAI-compatible API. Set these in `.env`:
 
-## Project Status
+- `LLM_API_BASE` — API endpoint (default: `http://localhost:8001/v1`)
+- `LLM_MODEL` — Model name
+- `LLM_API_KEY` — API key (leave empty if not required)
 
-This project is currently in the planning and concept stage.
-
-Initial focus areas include:
-
-- CRM workflow design
-- Chat-based AI assistant integration
-- Historical order data retrieval
-- Quote generation logic
-- Production status synchronization
-- Partner capability knowledge base
-
-## Long-Term Goal
-
-To build an AI-native CRM platform for custom design and print companies that combines sales support, production visibility, and company knowledge into one intelligent workflow.
-
-
-Progress:
-Database (db.py + schema.sql)
-
-Added Room and RoomMember tables
-Added room_id to Message so every message belongs to a specific room
-Fixed the FK delete inconsistency between SQLAlchemy and SQL file
-
-
-Backend (app.py)
-
-Fixed the session bug in maybe_answer_with_llm — now opens its own fresh session
-Added get_current_user shared dependency
-Added 6 new room routes: create, list, list my rooms, join, leave, get messages, post message
-All message routes are room-scoped and membership-gated
-LLM bot replies into the correct room
-
-
-WebSocket (websocket_manager.py)
-
-Rebuilt from a flat list into a room-aware dictionary
-Added switch_room() to move connections between rooms cleanly
-Broadcasts only to connections inside the target room
-
-
-Frontend (index.html + styles.css + app.js)
-
-New two-column layout with sidebar and main chat area
-Room list with join badges, active room highlight
-Create room form, leave room button
-Logged-in username shown in sidebar header
-Last active room restored on refresh
-Joined rooms persisted across refresh via GET /api/rooms/my
+The bot responds in chat when a message contains a `?`.
