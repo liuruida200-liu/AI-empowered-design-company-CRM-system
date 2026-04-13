@@ -2,7 +2,7 @@ import os
 import uuid
 import asyncio
 from pathlib import Path
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, Query
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, Query, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -39,6 +39,17 @@ VALID_STATUSES     = {"draft", "pending", "in_production", "completed", "cancell
 # Where generated images are stored (relative to this file → ../images/)
 IMAGES_DIR = Path(__file__).parent.parent / "images"
 IMAGES_DIR.mkdir(exist_ok=True)
+
+# Where uploaded files are stored
+UPLOADS_DIR = Path(__file__).parent.parent / "uploads"
+UPLOADS_DIR.mkdir(exist_ok=True)
+
+ALLOWED_MIME = {
+    "image/jpeg", "image/png", "image/gif", "image/webp",
+    "application/pdf",
+    "text/plain",
+}
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
 
 # Image trigger keywords (Chinese + English)
 IMAGE_KEYWORDS = {
@@ -921,8 +932,58 @@ async def websocket_endpoint(websocket: WebSocket):
             })
 
 
-# ─────────────────────────── Static files ───────────────────────
-# Images must be mounted BEFORE the frontend catch-all
+# ─────────────────────────── File upload ────────────────────────
 
-app.mount("/images", StaticFiles(directory=str(IMAGES_DIR)), name="images")
+@app.post("/api/rooms/{room_id}/upload")
+async def upload_file(
+    room_id: int,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    # Check membership
+    res = await session.execute(
+        select(RoomMember).where(RoomMember.room_id == room_id, RoomMember.user_id == current_user.id)
+    )
+    if not res.scalar_one_or_none():
+        raise HTTPException(status_code=403, detail="Not a member of this room")
+
+    # Validate MIME type
+    if file.content_type not in ALLOWED_MIME:
+        raise HTTPException(status_code=400, detail="File type not allowed. Supported: images, PDF, TXT")
+
+    # Read and check size
+    data = await file.read()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail="File too large (max 10 MB)")
+
+    # Save with UUID filename to avoid collisions
+    ext = Path(file.filename).suffix.lower() or ".bin"
+    filename = f"{uuid.uuid4().hex}{ext}"
+    (UPLOADS_DIR / filename).write_bytes(data)
+
+    url = f"/uploads/{filename}"
+    original_name = file.filename or filename
+
+    # Build message tag based on type
+    if file.content_type.startswith("image/"):
+        content = f"[img]{url}[/img]"
+    elif file.content_type == "application/pdf":
+        content = f"[pdf]{url}|{original_name}[/pdf]"
+    else:
+        content = f"[txt]{url}|{original_name}[/txt]"
+
+    msg = Message(room_id=room_id, user_id=current_user.id, content=content, is_bot=False)
+    session.add(msg)
+    await session.commit()
+    await session.refresh(msg)
+    await broadcast_message(msg, current_user.username, session)
+    return {"ok": True, "url": url}
+
+
+# ─────────────────────────── Static files ───────────────────────
+# Mounted BEFORE the frontend catch-all
+
+app.mount("/images",   StaticFiles(directory=str(IMAGES_DIR)),   name="images")
+app.mount("/uploads",  StaticFiles(directory=str(UPLOADS_DIR)),  name="uploads")
 app.mount("/", StaticFiles(directory="../frontend", html=True), name="static")

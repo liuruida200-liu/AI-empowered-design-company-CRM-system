@@ -31,6 +31,8 @@ const messagesDiv     = $("messages");
 const chatInput       = $("chatInput");
 const sendBtn         = $("sendBtn");
 const generateBtn     = $("generateBtn");
+const attachBtn       = $("attachBtn");
+const fileInput       = $("fileInput");
 const typingIndicator = $("typingIndicator");
 const clearHistoryBtn = $("clearHistoryBtn");
 const searchInput     = $("searchInput");
@@ -407,6 +409,41 @@ async function sendMessage() {
 }
 
 
+// ─── File Upload ─────────────────────────────────────────────────────────────
+attachBtn.onclick = () => {
+  if (!activeRoomId) return;
+  fileInput.click();
+};
+
+fileInput.onchange = async () => {
+  const file = fileInput.files[0];
+  fileInput.value = "";
+  if (!file || !activeRoomId) return;
+
+  const formData = new FormData();
+  formData.append("file", file);
+
+  attachBtn.textContent = "⏳";
+  attachBtn.disabled = true;
+  try {
+    const resp = await fetch(`${API}/rooms/${activeRoomId}/upload`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${token}` },
+      body: formData,
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      alert(err.detail || "Upload failed");
+    }
+  } catch (e) {
+    alert("Upload failed: " + e.message);
+  } finally {
+    attachBtn.textContent = "📎";
+    attachBtn.disabled = false;
+  }
+};
+
+
 // ─── Generate Image Modal ────────────────────────────────────────────────────
 generateBtn.onclick = () => {
   if (!activeRoomId) return;
@@ -711,21 +748,35 @@ function escapeHtml(str) {
 }
 
 function renderContent(content) {
-  // Render generated images: [img]/images/xxx.png[/img]
-  if (content.includes("[img]")) {
-    return content
-      .replace(/\[img\](\/images\/[^\[]+)\[\/img\]/g, (_, url) =>
-        `<img class="generated-image" src="${escapeHtml(url)}" alt="Generated design" loading="lazy">`
-      )
-      .replace(/\nPrompt: (.+)/g, (_, p) =>
-        `<div class="image-prompt">Prompt: ${escapeHtml(p)}</div>`
-      );
-  }
-  // Normal text: escape + highlight @mentions
-  return escapeHtml(content).replace(/@(\w+)/g, (match, username) => {
-    const cls = username === currentUser ? "mention mention-me" : "mention";
-    return `<span class="${cls}">${match}</span>`;
-  });
+  // Use placeholders so we can HTML-escape safely then restore as HTML tags
+  const PH = [];
+  const placeholder = (html) => { PH.push(html); return `\x00${PH.length - 1}\x00`; };
+
+  let s = content
+    // Images: generated (/images/) or uploaded (/uploads/)
+    .replace(/\[img\](\/(?:images|uploads)\/[^\[]*)\[\/img\]/g, (_, url) =>
+      placeholder(`<img class="chat-image" src="${url}" alt="Image" loading="lazy">`)
+    )
+    // Image prompt line
+    .replace(/\nPrompt: ([^\n]+)/g, (_, p) =>
+      placeholder(`<div class="image-prompt">Prompt: ${escapeHtml(p)}</div>`)
+    )
+    // PDF attachment
+    .replace(/\[pdf\](\/uploads\/[^|]*)\|([^\[]*)\[\/pdf\]/g, (_, url, name) =>
+      placeholder(`<a class="attachment" href="${url}" target="_blank" download>📄 ${escapeHtml(name)}</a>`)
+    )
+    // TXT attachment
+    .replace(/\[txt\](\/uploads\/[^|]*)\|([^\[]*)\[\/txt\]/g, (_, url, name) =>
+      placeholder(`<a class="attachment" href="${url}" target="_blank">📝 ${escapeHtml(name)}</a>`)
+    );
+
+  // Escape remaining text, then restore placeholders and @mentions
+  return escapeHtml(s)
+    .replace(/\x00(\d+)\x00/g, (_, i) => PH[+i])
+    .replace(/@(\w+)/g, (match, username) => {
+      const cls = username === currentUser ? "mention mention-me" : "mention";
+      return `<span class="${cls}">${match}</span>`;
+    });
 }
 
 
