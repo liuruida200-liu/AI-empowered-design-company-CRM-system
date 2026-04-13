@@ -649,3 +649,154 @@ body {
 .status-in_production { background: rgba(59,130,246,0.2);  color: #60a5fa; }
 .status-completed     { background: rgba(16,185,129,0.2);  color: #34d399; }
 .status-cancelled     { background: rgba(239,68,68,0.2);   color: #f87171; }
+
+/* ── Design Phase Badges ──────────────────────────────────────── */
+.order-item-phase-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+.phase-badge {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.phase-inquiry       { background: rgba(100,116,139,0.2); color: #94a3b8; }
+.phase-drafting      { background: rgba(139,92,246,0.2);  color: #a78bfa; }
+.phase-revision      { background: rgba(245,158,11,0.2);  color: #fbbf24; }
+.phase-final         { background: rgba(16,185,129,0.2);  color: #34d399; }
+.phase-in_production { background: rgba(59,130,246,0.2);  color: #60a5fa; }
+.phase-select {
+  font-size: 10px;
+  padding: 2px 4px;
+  height: 20px;
+  border-radius: 4px;
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+
+/* ── Quick Quote ──────────────────────────────────────────────── */
+.quote-form {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.quote-dims {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.quote-dims .field { flex: 1; }
+.quote-x { color: var(--text-muted); font-size: 11px; }
+.quote-result {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 11px;
+  margin-top: 2px;
+}
+.quote-line { line-height: 1.6; }
+.quote-line.text-dim { color: var(--text-muted); }
+
+/* ── Image Server Status Dot ──────────────────────────────────── */
+.img-status-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  margin-left: 4px;
+  vertical-align: middle;
+  transition: background 0.3s;
+}
+.img-status-dot.online  { background: #34d399; }
+.img-status-dot.offline { background: #f87171; }
+
+/* ── Generate Button ──────────────────────────────────────────── */
+.btn-generate {
+  background: rgba(139,92,246,0.15);
+  border: 1px solid rgba(139,92,246,0.3);
+  color: #a78bfa;
+  border-radius: 8px;
+  padding: 0 10px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+.btn-generate:hover { background: rgba(139,92,246,0.28); }
+
+/* ── Generate Image Modal ─────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.modal-overlay.hidden { display: none; }
+.modal-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 28px 28px 22px;
+  width: 420px;
+  max-width: 95vw;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 32px 80px rgba(0,0,0,0.6);
+}
+.modal-title {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text);
+}
+.generate-prompt {
+  resize: vertical;
+  min-height: 80px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.modal-dims {
+  display: flex;
+  gap: 12px;
+}
+.modal-dims label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+  flex: 1;
+}
+
+/* ── Generated Image in Chat ─────────────────────────────────── */
+.generated-image {
+  display: block;
+  max-width: 400px;
+  max-height: 400px;
+  border-radius: 8px;
+  margin-top: 6px;
+  border: 1px solid var(--border);
+  cursor: zoom-in;
+}
+.generated-image:hover { opacity: 0.92; }
+.image-prompt {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  font-style: italic;
+}

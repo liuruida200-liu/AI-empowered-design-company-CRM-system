@@ -94,6 +94,8 @@ class Order(Base):
     total_price: Mapped[float] = mapped_column(Float(), nullable=True)
     # draft / pending / in_production / completed / cancelled
     status: Mapped[str] = mapped_column(String(20), default="draft")
+    # inquiry / drafting / revision / final / in_production
+    design_phase: Mapped[str] = mapped_column(String(30), default="inquiry", server_default="inquiry")
     notes: Mapped[str] = mapped_column(Text(), nullable=True)
     created_at: Mapped["DateTime"] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

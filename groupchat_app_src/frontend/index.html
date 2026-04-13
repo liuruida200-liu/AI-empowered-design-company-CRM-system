@@ -57,9 +57,7 @@
 
       <div class="sidebar-section">
         <div class="section-label">Rooms</div>
-        <ul class="room-list" id="roomList">
-          <!-- populated by JS -->
-        </ul>
+        <ul class="room-list" id="roomList"></ul>
       </div>
 
       <div class="sidebar-section">
@@ -91,18 +89,37 @@
         </div>
       </div>
 
+      <!-- Quick Quote -->
+      <div class="sidebar-section">
+        <div class="section-label">
+          Quick Quote
+          <span class="img-status-dot" id="imgStatusDot" title="Image server status"></span>
+        </div>
+        <div class="quote-form" id="quoteForm">
+          <input class="field small" id="quoteMaterial" placeholder="Material (e.g. vinyl)">
+          <div class="quote-dims">
+            <input class="field small" id="quoteWidth"  type="number" placeholder="W (cm)" min="1">
+            <span class="quote-x">×</span>
+            <input class="field small" id="quoteHeight" type="number" placeholder="H (cm)" min="1">
+          </div>
+          <input class="field small" id="quoteQty" type="number" placeholder="Qty" min="1" value="1">
+          <button class="btn btn-ghost small" id="quoteBtn">Get Quote</button>
+          <div class="quote-result hidden" id="quoteResult"></div>
+        </div>
+      </div>
+
     </aside>
 
     <!-- Main chat area -->
     <main class="chat-area" id="chatArea">
 
-      <!-- Empty state (no room selected) -->
+      <!-- Empty state -->
       <div class="empty-state" id="emptyState">
         <div class="empty-icon">⌗</div>
         <p>Select a room to start chatting</p>
       </div>
 
-      <!-- Chat view (hidden until a room is selected) -->
+      <!-- Chat view -->
       <div class="chat-view hidden" id="chatView">
         <header class="chat-header">
           <div class="chat-room-info">
@@ -127,12 +144,43 @@
         <div class="typing-indicator hidden" id="typingIndicator"></div>
 
         <div class="composer">
-          <input class="field composer-input" id="chatInput" placeholder="Type a message…" autocomplete="off">
+          <input class="field composer-input" id="chatInput" placeholder="Type a message… (ask a ? or say 生成图/generate image)" autocomplete="off">
+          <button class="btn btn-generate" id="generateBtn" title="Generate design image">🎨</button>
           <button class="btn btn-primary" id="sendBtn">Send</button>
         </div>
       </div>
 
     </main>
+  </div>
+
+  <!-- Generate Image Modal -->
+  <div class="modal-overlay hidden" id="generateModal">
+    <div class="modal-card">
+      <div class="modal-title">Generate Design Image</div>
+      <textarea class="field generate-prompt" id="generatePrompt"
+        placeholder="Describe the design you want… e.g. 'modern vinyl banner with blue gradient, company logo centered, clean minimal style'"></textarea>
+      <div class="modal-dims">
+        <label>Width
+          <select class="field small" id="genWidth">
+            <option value="512">512px</option>
+            <option value="768">768px</option>
+            <option value="1024">1024px</option>
+          </select>
+        </label>
+        <label>Height
+          <select class="field small" id="genHeight">
+            <option value="512">512px</option>
+            <option value="768">768px</option>
+            <option value="1024">1024px</option>
+          </select>
+        </label>
+      </div>
+      <div id="generateError" class="auth-error"></div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="generateSubmitBtn">Generate</button>
+        <button class="btn btn-ghost" id="generateCancelBtn">Cancel</button>
+      </div>
+    </div>
   </div>
 
   <script src="app.js"></script>

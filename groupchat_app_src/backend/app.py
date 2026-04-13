@@ -1,18 +1,20 @@
 import os
+import uuid
 import asyncio
+from pathlib import Path
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
-from sqlalchemy import select, desc, delete
+from sqlalchemy import select, desc, delete, text, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from dotenv import load_dotenv
 
 from db import SessionLocal, init_db, User, Message, Room, RoomMember, MessageReaction, Order, ProductionCapability
 from auth import get_password_hash, verify_password, create_access_token, get_current_user_token, decode_token
 from websocket_manager import ConnectionManager
-from llm import chat_completion
+from llm import chat_completion, generate_image, image_server_available
 
 load_dotenv()
 
@@ -28,9 +30,22 @@ app.add_middleware(
 
 manager = ConnectionManager()
 
-VALID_ROLES = {"customer", "salesperson", "production", "admin"}
-VALID_ROOM_TYPES = {"general", "customer_sales", "sales_production"}
-ALLOWED_EMOJIS = {"👍", "❤️", "😂", "😮", "😢", "🎉"}
+VALID_ROLES        = {"customer", "salesperson", "production", "admin"}
+VALID_ROOM_TYPES   = {"general", "customer_sales", "sales_production"}
+ALLOWED_EMOJIS     = {"👍", "❤️", "😂", "😮", "😢", "🎉"}
+VALID_PHASES       = {"inquiry", "drafting", "revision", "final", "in_production"}
+VALID_STATUSES     = {"draft", "pending", "in_production", "completed", "cancelled"}
+
+# Where generated images are stored (relative to this file → ../images/)
+IMAGES_DIR = Path(__file__).parent.parent / "images"
+IMAGES_DIR.mkdir(exist_ok=True)
+
+# Image trigger keywords (Chinese + English)
+IMAGE_KEYWORDS = {
+    "生成图", "效果图", "画图", "设计图", "生成设计", "generate image",
+    "generate design", "画一张", "帮我画", "show me", "visualize",
+    "参考图", "样图", "出图",
+}
 
 
 # ─────────────────────────── Schemas ────────────────────────────
@@ -58,12 +73,27 @@ class OrderPayload(BaseModel):
     unit_price: Optional[float] = None
     notes: Optional[str] = None
     room_id: Optional[int] = None
-    customer_id: Optional[int] = None  # salesperson sets this
+    customer_id: Optional[int] = None
 
 class OrderStatusPayload(BaseModel):
     status: str
     unit_price: Optional[float] = None
     notes: Optional[str] = None
+
+class OrderPhasePayload(BaseModel):
+    design_phase: str
+
+class GenerateImagePayload(BaseModel):
+    prompt: str
+    room_id: int
+    width: int = 512
+    height: int = 512
+
+class QuotePayload(BaseModel):
+    material_keyword: str
+    width_cm: float
+    height_cm: float
+    quantity: int = 1
 
 
 # ─────────────────────────── Dependencies ───────────────────────
@@ -74,7 +104,7 @@ async def get_db() -> AsyncSession:
 
 async def get_current_user(
     username: str = Depends(get_current_user_token),
-    session: AsyncSession = Depends(get_db)
+    session: AsyncSession = Depends(get_db),
 ) -> User:
     res = await session.execute(select(User).where(User.username == username))
     user = res.scalar_one_or_none()
@@ -105,6 +135,7 @@ def serialize_order(order: Order, customer_username: str = None, salesperson_use
         "unit_price": order.unit_price,
         "total_price": order.total_price,
         "status": order.status,
+        "design_phase": getattr(order, "design_phase", "inquiry"),
         "notes": order.notes,
         "room_id": order.room_id,
         "customer_id": order.customer_id,
@@ -142,6 +173,52 @@ async def broadcast_message(msg: Message, username: str, session: AsyncSession):
         "message": serialize_message(msg, username),
     })
 
+
+# ─────────────────────────── AI helpers ─────────────────────────
+
+def _detect_image_trigger(content: str) -> bool:
+    lower = content.lower()
+    return any(kw in lower for kw in IMAGE_KEYWORDS)
+
+async def _fetch_similar_orders(material_hint: str, limit: int = 3) -> list[Order]:
+    """Return past completed/in_production orders whose material matches the hint."""
+    if not material_hint:
+        return []
+    async with SessionLocal() as session:
+        res = await session.execute(
+            select(Order)
+            .where(
+                Order.material.ilike(f"%{material_hint}%"),
+                Order.status.in_(["completed", "in_production"]),
+            )
+            .order_by(desc(Order.created_at))
+            .limit(limit)
+        )
+        return res.scalars().all()
+
+async def _fetch_capability_for_material(material_hint: str) -> Optional[ProductionCapability]:
+    async with SessionLocal() as session:
+        res = await session.execute(
+            select(ProductionCapability).where(
+                or_(
+                    ProductionCapability.name.ilike(f"%{material_hint}%"),
+                    ProductionCapability.material_type.ilike(f"%{material_hint}%"),
+                )
+            ).limit(1)
+        )
+        return res.scalar_one_or_none()
+
+def _extract_material_hint(content: str) -> str:
+    """Very simple keyword scan to detect a mentioned material."""
+    MATERIALS = ["vinyl", "acrylic", "fabric", "foam", "canvas", "pvc", "polyester",
+                 "uv print", "laser", "sublimation", "横幅", "亚克力", "布", "写真"]
+    lower = content.lower()
+    for m in MATERIALS:
+        if m in lower:
+            return m
+    return ""
+
+
 async def maybe_answer_with_llm(
     room_id: int,
     content: str,
@@ -149,12 +226,20 @@ async def maybe_answer_with_llm(
     sender_role: str = None,
     room_type: str = "general",
 ):
-    if "?" not in content:
+    has_question   = "?" in content or "？" in content
+    image_trigger  = _detect_image_trigger(content)
+    material_hint  = _extract_material_hint(content)
+
+    if not has_question and not image_trigger:
         return
 
-    # Fetch recent orders as context — scope to sender's own orders for customers
+    # ── Fetch context data ─────────────────────────────────────
     orders_context = ""
+    similar_context = ""
+    pricing_context = ""
+
     async with SessionLocal() as session:
+        # Recent orders for the sender
         q = select(Order).order_by(desc(Order.created_at)).limit(5)
         if sender_role == "customer" and sender_username:
             user_res = await session.execute(select(User).where(User.username == sender_username))
@@ -164,28 +249,48 @@ async def maybe_answer_with_llm(
         res = await session.execute(q)
         recent_orders = res.scalars().all()
         if recent_orders:
-            lines = []
-            for o in recent_orders:
-                lines.append(
-                    f"  Order #{o.id}: {o.material} {o.size} x{o.quantity} "
-                    f"— status: {o.status}"
-                    + (f", total: ¥{o.total_price}" if o.total_price else "")
-                )
-            orders_context = "Recent orders:\n" + "\n".join(lines)
+            lines = [
+                f"  Order #{o.id}: {o.material} {o.size} x{o.quantity} "
+                f"— status: {o.status}, phase: {getattr(o, 'design_phase', 'inquiry')}"
+                + (f", total: ¥{o.total_price}" if o.total_price else "")
+                for o in recent_orders
+            ]
+            orders_context = "Your recent orders:\n" + "\n".join(lines)
 
-    # Build context-aware system prompt
+    # Similar past orders (reference for customer)
+    if material_hint:
+        similar = await _fetch_similar_orders(material_hint)
+        if similar:
+            lines = [
+                f"  Past order #{o.id}: {o.material} {o.size} x{o.quantity}"
+                + (f" — ¥{o.total_price}" if o.total_price else "")
+                for o in similar
+            ]
+            similar_context = f"Past similar orders for '{material_hint}':\n" + "\n".join(lines)
+
+        cap = await _fetch_capability_for_material(material_hint)
+        if cap:
+            pricing_context = (
+                f"Pricing for {cap.name}: ¥{cap.price_per_sqm}/sqm, "
+                f"max size {cap.max_width_cm}×{cap.max_height_cm} cm, "
+                f"lead time {cap.lead_time_days} days. {cap.notes or ''}"
+            )
+
+    # ── Build system prompt ────────────────────────────────────
     room_desc = {
-        "customer_sales": "a customer-salesperson conversation room",
+        "customer_sales":   "a customer-salesperson conversation room",
         "sales_production": "a salesperson-production coordination room",
-        "general": "a general chat room",
+        "general":          "a general chat room",
     }.get(room_type, "a chat room")
 
     role_instructions = {
-        "customer": "The user is a customer. Help them understand order status, pricing, and timelines. Be friendly and clear.",
-        "salesperson": "The user is a salesperson. Provide detailed pricing, material specs, and production capabilities to help them quote accurately.",
-        "production": "The user is a production team member. Focus on technical specs, capacity, scheduling, and material requirements.",
-        "admin": "The user is an admin. Provide comprehensive information.",
+        "customer":     "The user is a customer. Help them understand order status, pricing, and timelines. Be friendly and clear.",
+        "salesperson":  "The user is a salesperson. Provide detailed pricing, material specs, and production capabilities to help them quote accurately.",
+        "production":   "The user is a production team member. Focus on technical specs, capacity, scheduling, and material requirements.",
+        "admin":        "The user is an admin. Provide comprehensive information.",
     }.get(sender_role or "customer", "")
+
+    context_blocks = "\n\n".join(filter(None, [orders_context, similar_context, pricing_context]))
 
     system_prompt = f"""You are an AI assistant for a design company CRM system.
 
@@ -193,24 +298,69 @@ Context:
 - This is {room_desc}
 - Asking user: {sender_username or "unknown"} (role: {sender_role or "unknown"})
 - {role_instructions}
-{orders_context}
 
-Provide concise, accurate answers appropriate to this context. For pricing questions, reference the recent orders above if relevant."""
+{context_blocks}
+
+Guidelines:
+- For pricing questions, reference similar past orders and production capabilities above.
+- For order status, reference the user's recent orders above.
+- When you suggest a price, show the calculation (e.g., 1.2m × 2.4m = 2.88 sqm × ¥120 = ¥345.60).
+- Keep responses concise and practical."""
+
+    # ── Text response ──────────────────────────────────────────
+    if has_question:
+        try:
+            reply_text = await chat_completion([
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": content},
+            ])
+        except Exception as e:
+            reply_text = f"(LLM error) {e}"
+
+        async with SessionLocal() as session:
+            bot_msg = Message(room_id=room_id, user_id=None, content=reply_text, is_bot=True)
+            session.add(bot_msg)
+            await session.commit()
+            await session.refresh(bot_msg)
+            await broadcast_message(bot_msg, "LLM Bot", session)
+
+    # ── Image generation ───────────────────────────────────────
+    if image_trigger:
+        asyncio.create_task(_generate_and_post_image(room_id, content))
+
+
+async def _generate_and_post_image(room_id: int, prompt: str):
+    """Generate an image in the background and post it as a bot message."""
+    available = await image_server_available()
+    if not available:
+        async with SessionLocal() as session:
+            msg = Message(
+                room_id=room_id, user_id=None,
+                content="[Image server offline] Start image_server.py on your PC and set IMAGE_SERVER_URL in .env",
+                is_bot=True,
+            )
+            session.add(msg)
+            await session.commit()
+            await session.refresh(msg)
+            await broadcast_message(msg, "LLM Bot", session)
+        return
 
     try:
-        reply_text = await chat_completion([
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": content},
-        ])
+        img_bytes = await generate_image(prompt=prompt, width=512, height=512)
+        filename  = f"gen_{uuid.uuid4().hex[:12]}.png"
+        filepath  = IMAGES_DIR / filename
+        filepath.write_bytes(img_bytes)
+        image_url = f"/images/{filename}"
+        content   = f"[img]{image_url}[/img]\nPrompt: {prompt}"
     except Exception as e:
-        reply_text = f"(LLM error) {e}"
+        content = f"(Image generation failed) {e}"
 
     async with SessionLocal() as session:
-        bot_msg = Message(room_id=room_id, user_id=None, content=reply_text, is_bot=True)
-        session.add(bot_msg)
+        msg = Message(room_id=room_id, user_id=None, content=content, is_bot=True)
+        session.add(msg)
         await session.commit()
-        await session.refresh(bot_msg)
-        await broadcast_message(bot_msg, "LLM Bot", session)
+        await session.refresh(msg)
+        await broadcast_message(msg, "LLM Bot", session)
 
 
 # ─────────────────────────── Startup ────────────────────────────
@@ -218,6 +368,15 @@ Provide concise, accurate answers appropriate to this context. For pricing quest
 @app.on_event("startup")
 async def on_startup():
     await init_db()
+    # Add design_phase column if it doesn't exist (safe migration)
+    async with SessionLocal() as session:
+        try:
+            await session.execute(
+                text("ALTER TABLE orders ADD COLUMN design_phase VARCHAR(30) NOT NULL DEFAULT 'inquiry'")
+            )
+            await session.commit()
+        except Exception:
+            pass  # column already exists
 
 
 # ─────────────────────────── Auth routes ────────────────────────
@@ -397,7 +556,6 @@ async def post_room_message(
     ))
     return {"ok": True, "id": m.id}
 
-
 @app.delete("/api/rooms/{room_id}/messages")
 async def clear_room_messages(
     room_id: int,
@@ -461,12 +619,11 @@ async def create_order(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ):
-    # Customers create orders for themselves; salespeople create on behalf of a customer
     if current_user.role == "customer":
         customer_id = current_user.id
     else:
         if not payload.customer_id:
-            raise HTTPException(status_code=400, detail="customer_id is required when creating an order on behalf of a customer")
+            raise HTTPException(status_code=400, detail="customer_id required")
         customer_id = payload.customer_id
 
     total = None
@@ -496,7 +653,6 @@ async def list_orders(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ):
-    """Salesperson and production see all orders; customers see only their own."""
     query = select(Order)
     if current_user.role == "customer":
         query = query.where(Order.customer_id == current_user.id)
@@ -528,6 +684,28 @@ async def get_my_orders(
         out.append(serialize_order(o, current_user.username, su.username if su else None))
     return {"orders": out}
 
+@app.get("/api/orders/similar")
+async def get_similar_orders(
+    material: str = Query(..., description="Material keyword to search"),
+    limit: int = Query(default=5, ge=1, le=20),
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Return past orders with similar material — used by AI and salesperson for reference."""
+    res = await session.execute(
+        select(Order)
+        .where(Order.material.ilike(f"%{material}%"))
+        .order_by(desc(Order.created_at))
+        .limit(limit)
+    )
+    orders = res.scalars().all()
+    out = []
+    for o in orders:
+        cu = await session.get(User, o.customer_id) if o.customer_id else None
+        su = await session.get(User, o.salesperson_id) if o.salesperson_id else None
+        out.append(serialize_order(o, cu.username if cu else None, su.username if su else None))
+    return {"orders": out, "material": material}
+
 @app.patch("/api/orders/{order_id}")
 async def update_order(
     order_id: int,
@@ -540,10 +718,8 @@ async def update_order(
         raise HTTPException(status_code=404, detail="Order not found")
     if current_user.role == "customer":
         raise HTTPException(status_code=403, detail="Customers cannot update order status")
-
-    valid_statuses = {"draft", "pending", "in_production", "completed", "cancelled"}
-    if payload.status not in valid_statuses:
-        raise HTTPException(status_code=400, detail=f"Invalid status. Choose from: {valid_statuses}")
+    if payload.status not in VALID_STATUSES:
+        raise HTTPException(status_code=400, detail=f"Invalid status. Choose from: {VALID_STATUSES}")
 
     order.status = payload.status
     if payload.unit_price is not None:
@@ -557,8 +733,29 @@ async def update_order(
     await session.commit()
     return {"ok": True, "order": serialize_order(order)}
 
+@app.patch("/api/orders/{order_id}/phase")
+async def update_order_phase(
+    order_id: int,
+    payload: OrderPhasePayload,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Update the design phase of an order (salesperson / production / admin only)."""
+    if current_user.role == "customer":
+        raise HTTPException(status_code=403, detail="Customers cannot update design phase")
+    if payload.design_phase not in VALID_PHASES:
+        raise HTTPException(status_code=400, detail=f"Invalid phase. Choose from: {VALID_PHASES}")
 
-# ─────────────────────────── Production Capabilities ────────────
+    order = await session.get(Order, order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    order.design_phase = payload.design_phase
+    await session.commit()
+    return {"ok": True, "order": serialize_order(order)}
+
+
+# ─────────────────────────── Capabilities & Quote ───────────────
 
 @app.get("/api/capabilities")
 async def list_capabilities(session: AsyncSession = Depends(get_db)):
@@ -578,6 +775,89 @@ async def list_capabilities(session: AsyncSession = Depends(get_db)):
         }
         for c in caps
     ]}
+
+@app.post("/api/capabilities/quote")
+async def get_quote(
+    payload: QuotePayload,
+    session: AsyncSession = Depends(get_db),
+):
+    """Instant price estimate: find matching capability → calculate from dimensions."""
+    res = await session.execute(
+        select(ProductionCapability).where(
+            or_(
+                ProductionCapability.name.ilike(f"%{payload.material_keyword}%"),
+                ProductionCapability.material_type.ilike(f"%{payload.material_keyword}%"),
+            )
+        ).limit(1)
+    )
+    cap = res.scalar_one_or_none()
+    if not cap:
+        raise HTTPException(status_code=404, detail=f"No capability found matching '{payload.material_keyword}'")
+
+    sqm = (payload.width_cm / 100) * (payload.height_cm / 100)
+    unit_price = round(sqm * cap.price_per_sqm, 2)
+    total_price = round(unit_price * payload.quantity, 2)
+
+    return {
+        "capability": cap.name,
+        "material_type": cap.material_type,
+        "width_cm": payload.width_cm,
+        "height_cm": payload.height_cm,
+        "sqm": round(sqm, 4),
+        "price_per_sqm": cap.price_per_sqm,
+        "unit_price": unit_price,
+        "quantity": payload.quantity,
+        "total_price": total_price,
+        "lead_time_days": cap.lead_time_days,
+        "notes": cap.notes,
+    }
+
+
+# ─────────────────────────── Image Generation ───────────────────
+
+@app.post("/api/generate-image")
+async def api_generate_image(
+    payload: GenerateImagePayload,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Generate an image and post it to the specified room as a bot message."""
+    room = await session.get(Room, payload.room_id)
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+
+    available = await image_server_available()
+    if not available:
+        raise HTTPException(status_code=503, detail="Image server offline. Start image_server.py on PC.")
+
+    try:
+        img_bytes = await generate_image(
+            prompt=payload.prompt,
+            width=payload.width,
+            height=payload.height,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Image generation failed: {e}")
+
+    filename  = f"gen_{uuid.uuid4().hex[:12]}.png"
+    filepath  = IMAGES_DIR / filename
+    filepath.write_bytes(img_bytes)
+    image_url = f"/images/{filename}"
+
+    content = f"[img]{image_url}[/img]\nPrompt: {payload.prompt}"
+    bot_msg = Message(room_id=payload.room_id, user_id=None, content=content, is_bot=True)
+    session.add(bot_msg)
+    await session.commit()
+    await session.refresh(bot_msg)
+    await broadcast_message(bot_msg, "LLM Bot", session)
+
+    return {"ok": True, "image_url": image_url, "message_id": bot_msg.id}
+
+@app.get("/api/image-server/status")
+async def image_server_status():
+    """Check if image generation server is reachable."""
+    available = await image_server_available()
+    return {"available": available}
 
 
 # ─────────────────────────── WebSocket ──────────────────────────
@@ -641,4 +921,8 @@ async def websocket_endpoint(websocket: WebSocket):
             })
 
 
+# ─────────────────────────── Static files ───────────────────────
+# Images must be mounted BEFORE the frontend catch-all
+
+app.mount("/images", StaticFiles(directory=str(IMAGES_DIR)), name="images")
 app.mount("/", StaticFiles(directory="../frontend", html=True), name="static")
