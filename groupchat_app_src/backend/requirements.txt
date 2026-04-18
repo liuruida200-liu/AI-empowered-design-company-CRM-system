@@ -12,3 +12,4 @@ python-multipart
 pypdf
 sentence-transformers
 chromadb
+python-multipart

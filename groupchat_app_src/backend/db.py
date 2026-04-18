@@ -19,7 +19,7 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     username: Mapped[str] = mapped_column(String(50), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
-    role: Mapped[str] = mapped_column(String(20), default="customer")  # customer/salesperson/production/admin
+    role: Mapped[str] = mapped_column(String(20), default="customer")
     created_at: Mapped["DateTime"] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     messages = relationship("Message", back_populates="user")
@@ -33,9 +33,14 @@ class Room(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(100), unique=True, index=True)
     description: Mapped[str] = mapped_column(String(255), nullable=True)
-    type: Mapped[str] = mapped_column(String(30), default="general")  # general/customer_sales/sales_production
+    type: Mapped[str] = mapped_column(String(30), default="general")
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped["DateTime"] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    # ── Rolling order brief ──────────────────────────────────────────────────
+    order_brief: Mapped[str] = mapped_column(Text(), nullable=True)
+    brief_checkpoint_id: Mapped[int] = mapped_column(Integer(), default=0, server_default="0")
+    # ────────────────────────────────────────────────────────────────────────
 
     owner = relationship("User", back_populates="owned_rooms")
     members = relationship("RoomMember", back_populates="room")
@@ -43,7 +48,6 @@ class Room(Base):
 
 
 class RoomMember(Base):
-    """Join table: tracks which users have joined which rooms."""
     __tablename__ = "room_members"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -92,11 +96,19 @@ class Order(Base):
     quantity: Mapped[int] = mapped_column(Integer(), default=1)
     unit_price: Mapped[float] = mapped_column(Float(), nullable=True)
     total_price: Mapped[float] = mapped_column(Float(), nullable=True)
-    # draft / pending / in_production / completed / cancelled
     status: Mapped[str] = mapped_column(String(20), default="draft")
-    # inquiry / drafting / revision / final / in_production
     design_phase: Mapped[str] = mapped_column(String(30), default="inquiry", server_default="inquiry")
     notes: Mapped[str] = mapped_column(Text(), nullable=True)
+
+    # ── Design file ──────────────────────────────────────────────────────────
+    # URL of the final approved design file stored in ../uploads/
+    # e.g. /uploads/gen_abc123.png
+    # Populated when salesperson uploads the confirmed design.
+    # Used by the AI vision pipeline to tag design elements and embed
+    # the order into ChromaDB for similar-design retrieval.
+    design_file_url: Mapped[str] = mapped_column(String(500), nullable=True)
+    # ────────────────────────────────────────────────────────────────────────
+
     created_at: Mapped["DateTime"] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     customer = relationship("User", foreign_keys=[customer_id])
