@@ -880,92 +880,41 @@ function renderSummary(brief) {
 
   const sections = [];
 
-  // Logistics
-  if (brief.logistics) {
-    const l = brief.logistics;
-    const fields = [
-      ["Material",  l.material],
-      ["Size",      l.size],
-      ["Quantity",  l.quantity],
-      ["Deadline",  l.deadline],
-      ["Location",  l.delivery_location],
-    ].filter(([, v]) => v != null);
-
-    if (fields.length) {
-      sections.push(`
-        <div class="summary-section">
-          <div class="summary-section-title">Logistics</div>
-          ${fields.map(([k, v]) => `
-            <div class="summary-field">
-              <span class="summary-field-label">${k}</span>
-              <span class="summary-field-value">${escapeHtml(String(v))}</span>
-            </div>`).join("")}
-        </div>`);
-    }
-  }
-
-  // Manufacturing
-  if (brief.manufacturing) {
-    const m = brief.manufacturing;
-    const fields = [
-      ["Print Method",  m.print_method],
-      ["Finishing",     m.finishing],
-      ["Resolution",    m.resolution],
-      ["Colour",        m.color_requirements],
-      ["Special Notes", m.special_notes],
-    ].filter(([, v]) => v != null);
-
-    if (fields.length) {
-      sections.push(`
-        <div class="summary-section">
-          <div class="summary-section-title">Manufacturing</div>
-          ${fields.map(([k, v]) => `
-            <div class="summary-field">
-              <span class="summary-field-label">${k}</span>
-              <span class="summary-field-value">${escapeHtml(String(v))}</span>
-            </div>`).join("")}
-        </div>`);
-    }
-  }
-
-  // Customer Intent
-  if (brief.customer_intent) {
-    const c = brief.customer_intent;
-    let html = `<div class="summary-section"><div class="summary-section-title">Customer Intent</div>`;
-    if (c.use_case) html += `<div class="summary-field"><span class="summary-field-label">Use Case</span><span class="summary-field-value">${escapeHtml(c.use_case)}</span></div>`;
-    if (c.budget_sensitivity) html += `<div class="summary-field"><span class="summary-field-label">Budget</span><span class="summary-field-value">${escapeHtml(c.budget_sensitivity)}</span></div>`;
-    if (c.tone_or_style) html += `<div class="summary-field"><span class="summary-field-label">Style</span><span class="summary-field-value">${escapeHtml(c.tone_or_style)}</span></div>`;
-    if (c.priorities?.length) {
-      html += `<div class="summary-field"><span class="summary-field-label">Priorities</span><div>${c.priorities.map(p => `<span class="summary-tag">${escapeHtml(p)}</span>`).join("")}</div></div>`;
-    }
-    if (c.rejected?.length) {
-      html += `<div class="summary-field"><span class="summary-field-label">Rejected</span><div>${c.rejected.map(r => `<span class="summary-tag rejected">${escapeHtml(r)}</span>`).join("")}</div></div>`;
-    }
-    html += `</div>`;
-    sections.push(html);
-  }
-
-  // Open Questions
-  if (brief.open_questions?.length) {
+  // 1. Use Case
+  const useCase = brief.logistics?.material || brief.customer_intent?.use_case;
+  if (useCase) {
     sections.push(`
       <div class="summary-section">
-        <div class="summary-section-title">Open Questions</div>
-        ${brief.open_questions.map(q => `<span class="summary-tag question">? ${escapeHtml(q)}</span>`).join("")}
+        <div class="summary-section-title">Use Case</div>
+        <div class="summary-field-value">${escapeHtml(String(useCase))}</div>
       </div>`);
   }
 
-  // Narrative summary
+  // 2. Conflicts & Tensions
+  if (brief.conflicts?.length) {
+    sections.push(`
+      <div class="summary-section">
+        <div class="summary-section-title" style="color:#f87171">⚠ Conflicts & Tensions</div>
+        ${brief.conflicts.map(c => `<div class="summary-conflict">${escapeHtml(c)}</div>`).join("")}
+      </div>`);
+  }
+
+  // 3. Narrative Summary
   if (brief.narrative) {
     sections.push(`
       <div class="summary-section">
+        <div class="summary-section-title">Summary</div>
         <div class="summary-narrative">${escapeHtml(brief.narrative)}</div>
-      </div>
-    `);
+      </div>`);
   }
 
-  // Confidence
-  if (brief.confidence) {
-    sections.push(`<div class="summary-confidence ${brief.confidence}">Confidence: ${escapeHtml(brief.confidence)}</div>`);
+  // 4. Rejected
+  if (brief.customer_intent?.rejected?.length) {
+    sections.push(`
+      <div class="summary-section">
+        <div class="summary-section-title">Rejected</div>
+        <div>${brief.customer_intent.rejected.map(r => `<span class="summary-tag rejected">${escapeHtml(r)}</span>`).join("")}</div>
+      </div>`);
   }
 
   summaryOutput.innerHTML = sections.join("");
