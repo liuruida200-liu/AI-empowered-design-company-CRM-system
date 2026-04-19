@@ -18,7 +18,11 @@ import base64
 from db import SessionLocal, init_db, User, Message, Room, RoomMember, MessageReaction, Order, ProductionCapability
 from auth import get_password_hash, verify_password, create_access_token, get_current_user_token, decode_token
 from websocket_manager import ConnectionManager
-from llm import chat_completion, generate_image, image_server_available,update_rolling_brief, generate_final_brief,tag_design_image, format_design_tags_for_embedding
+from llm import (chat_completion, generate_image, image_server_available,
+                 update_rolling_brief, generate_final_brief,
+                 tag_design_image, format_design_tags_for_embedding,
+                 analyze_reference_image, format_reference_analysis_for_brief,
+                 _sync_brief_to_order)
 from embedding import embed_document, retrieve_relevant_chunks, embed_capabilities, embed_order,retrieve_similar_capabilities, retrieve_similar_orders,reembed_order_with_tags
 
 load_dotenv()
@@ -59,7 +63,7 @@ MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
 # Image trigger keywords (Chinese + English)
 IMAGE_KEYWORDS = {
     "生成图", "效果图", "画图", "设计图", "生成设计", "generate image",
-    "generate design", "画一张", "帮我画", "show me", "visualize",
+    "generate design", "画一张", "帮我画", "visualize",
     "参考图", "样图", "出图",
 }
 
@@ -249,6 +253,49 @@ async def _tag_and_embed_order(order_id: int):
         )
         print(f"✓ Order #{order_id} embedded into past_orders collection")
 
+async def _analyze_reference_image(room_id: int, image_url: str):
+    """
+    Background task — runs when a customer uploads an image to a customer_sales room.
+    Analyzes the image for style/design cues and appends findings to the room's order brief.
+    Completely silent — no message posted to the room.
+    """
+    analysis = await analyze_reference_image(image_url)
+    if "error" in analysis:
+        print(f"⚠ Reference image analysis failed for {image_url}: {analysis['error']}")
+        return
+
+    analysis_text = format_reference_analysis_for_brief(analysis, image_url)
+    print(f"✓ Reference image analyzed: {analysis.get('mood', '')}")
+
+    # Append to the room's existing brief as a reference image section
+    async with SessionLocal() as session:
+        room = await session.get(Room, room_id)
+        if not room:
+            return
+
+        import json as _json
+        existing = {}
+        if room.order_brief:
+            try:
+                existing = _json.loads(room.order_brief)
+            except Exception:
+                existing = {}
+
+        # Add or append to reference_images list in the brief
+        refs = existing.get("reference_images", [])
+        refs.append({
+            "url": image_url,
+            "mood": analysis.get("mood"),
+            "style_cues": analysis.get("style_cues", []),
+            "dominant_colours": analysis.get("dominant_colours", []),
+            "customer_likely_wants": analysis.get("customer_likely_wants", []),
+            "things_to_clarify": analysis.get("things_to_clarify", []),
+        })
+        existing["reference_images"] = refs
+        room.order_brief = _json.dumps(existing, ensure_ascii=False)
+        await session.commit()
+        print(f"✓ Reference image appended to brief for room {room_id}")
+
 
 # ─────────────────────────── AI helpers ─────────────────────────
 
@@ -290,6 +337,15 @@ def _load_image_as_base64(img_url: str) -> str | None:
         return base64.b64encode(fs_path.read_bytes()).decode("utf-8")
     except Exception:
         return None
+
+def _wants_past_work(query: str) -> bool:
+    """Detect if the customer is asking to see past work examples."""
+    INTENT_KEYWORDS = {
+        "before", "example", "similar", "done", "made", "look like",
+        "quality", "sample", "show", "portfolio", "past", "previous",
+        "案例", "样品", "以前", "过去", "做过", "效果"
+    }
+    return any(kw in query.lower() for kw in INTENT_KEYWORDS)
 
 
 async def maybe_answer_with_llm(
@@ -359,6 +415,16 @@ async def maybe_answer_with_llm(
                 await broadcast_message(msg, "LLM Bot", session)
             return
 
+        async with SessionLocal() as session:
+            room = await session.get(Room, room_id)
+            if room and room.order_brief:
+                import json as _json
+                try:
+                    brief_data = _json.loads(room.order_brief)
+                    await _sync_brief_to_order(room_id, brief_data)
+                except Exception as e:
+                    print(f"⚠ Brief sync failed: {e}")
+                    
         async with SessionLocal() as session:
             res = await session.execute(
                 select(Order)
@@ -455,8 +521,13 @@ async def maybe_answer_with_llm(
             if not m.is_bot and m.user_id:
                 u = await session.get(User, m.user_id)
                 uname = u.username if u else "unknown"
-            prefix = "" if m.is_bot else f"[{uname}] "
-
+            # Fetch role for this user to tag the message correctly
+            user_role = "unknown"
+            if not m.is_bot and m.user_id:
+                u_obj = await session.get(User, m.user_id)
+                if u_obj:
+                    user_role = u_obj.role
+            prefix = "" if m.is_bot else f"[{uname} ({user_role})] "
             # Check if message contains an image tag
             image_urls = _extract_image_urls(m.content)
             plain_text = _strip_image_tags(m.content)
@@ -487,20 +558,48 @@ async def maybe_answer_with_llm(
     if cap_chunks:
         pricing_context = "Relevant production capabilities:\n" + "\n---\n".join(cap_chunks)
 
-    order_matches = await _asyncio.get_event_loop().run_in_executor(
-        None, retrieve_similar_orders, query, 3
-    )
-    if order_matches:
-        lines = []
-        for match in order_matches:
-            meta = match["metadata"]
-            line = f"  Order #{meta['order_id']}: {meta['material']} {meta['size']}"
-            if meta.get("design_url"):
-                line += f" — design: {meta['design_url']}"
-            lines.append(line)
-            lines.append(f"  {match['text'][:200]}...")
-        similar_context = "Similar past orders from archive:\n" + "\n".join(lines)
+    order_matches = []
+    if _wants_past_work(query):
+        # Get material from room's order brief for accurate matching
+        import json as _json
+        brief_material = None
+        async with SessionLocal() as session:
+            room = await session.get(Room, room_id)
+            if room and room.order_brief:
+                try:
+                    brief = _json.loads(room.order_brief)
+                    brief_material = brief.get("logistics", {}).get("material")
+                except Exception:
+                    pass
 
+        # Use brief material if available, fall back to query
+        search_term = brief_material if brief_material and brief_material != "TBD" else query
+
+        raw_matches = await _asyncio.get_event_loop().run_in_executor(
+            None, retrieve_similar_orders, search_term, 3
+        )
+        order_matches = [m for m in raw_matches if m["metadata"].get("design_url")]
+
+        if order_matches:
+            lines = []
+            for match in order_matches:
+                meta = match["metadata"]
+                lines.append(
+                    f"  Past completed work: {meta['material']} {meta['size']} "
+                    f"— design file available at {meta['design_url']}"
+                )
+            similar_context = (
+                "We have completed similar work before — reference these when answering:\n"
+                + "\n".join(lines)
+            )
+        else:
+            similar_context = (
+                f"IMPORTANT: We have NO completed past orders"
+                f"{' matching ' + search_term if search_term != query else ''} "
+                f"in our archive. Tell the customer honestly we don't have past work "
+                f"photos to show yet, but explain what we can produce based on our "
+                f"production capabilities listed above. Do NOT invent past examples."
+            )
     # RAG over uploaded files
     file_context = ""
     chunks = await _asyncio.get_event_loop().run_in_executor(
@@ -540,12 +639,14 @@ Guidelines:
 - For pricing questions, show the calculation (e.g., 1.2m × 2.4m = 2.88 sqm × ¥120 = ¥345.60).
 - For order status, reference the user's recent orders above.
 - Keep responses concise and practical.
-- The conversation history below gives you context of what was just discussed."""
+- The conversation history below gives you context of what was just discussed.
+- CRITICAL: Never invent or fabricate past work examples. Only reference past orders explicitly listed above under "We have completed similar work before". If none are listed, tell the customer honestly we don't have recorded examples yet.
+"""
+
 
     # ── Text response ──────────────────────────────────────────────────────
     if not image_trigger:
         try:
-            # Pass full conversation history + current query
             messages_for_llm = (
                 [{"role": "system", "content": system_prompt}]
                 + history_for_llm
@@ -561,6 +662,24 @@ Guidelines:
             await session.commit()
             await session.refresh(bot_msg)
             await broadcast_message(bot_msg, "LLM Bot", session)
+
+        # Post past work design images if customer asked to see examples
+        if order_matches:
+            for match in order_matches[:2]:  # max 2 images to avoid spam
+                design_url = match["metadata"].get("design_url", "")
+                if design_url:
+                    async with SessionLocal() as session:
+                        meta = match["metadata"]
+                        img_msg = Message(
+                            room_id=room_id,
+                            user_id=None,
+                            content=f"[img]{design_url}[/img]\nPast work: {meta.get('material', '')} {meta.get('size', '')}",
+                            is_bot=True,
+                        )
+                        session.add(img_msg)
+                        await session.commit()
+                        await session.refresh(img_msg)
+                        await broadcast_message(img_msg, "LLM Bot", session)
 
     # ── Image generation ───────────────────────────────────────────────────
     if image_trigger:
@@ -676,13 +795,46 @@ async def create_room(
     existing = await session.execute(select(Room).where(Room.name == payload.name))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Room name already taken")
+
     room_type = payload.type if payload.type in VALID_ROOM_TYPES else "general"
-    room = Room(name=payload.name, description=payload.description, type=room_type, owner_id=current_user.id)
+    room = Room(
+        name=payload.name,
+        description=payload.description,
+        type=room_type,
+        owner_id=current_user.id,
+    )
     session.add(room)
     await session.flush()
+
     session.add(RoomMember(room_id=room.id, user_id=current_user.id))
+
+    # Auto-create a draft order for customer_sales rooms
+    if room_type == "customer_sales":
+        customer_id = current_user.id if current_user.role == "customer" else None
+        salesperson_id = current_user.id if current_user.role in ("salesperson", "admin") else None
+        session.add(Order(
+            room_id=room.id,
+            customer_id=customer_id,
+            salesperson_id=salesperson_id,
+            material="TBD",
+            size="TBD",
+            quantity=1,
+            status="draft",
+            design_phase="inquiry",
+            notes="Auto-created when room opened. Details confirmed via conversation.",
+        ))
+
     await session.commit()
-    return {"ok": True, "room": {"id": room.id, "name": room.name, "description": room.description, "type": room.type}}
+    return {
+        "ok": True,
+        "room": {
+            "id": room.id,
+            "name": room.name,
+            "description": room.description,
+            "type": room.type,
+        },
+    }
+
 
 @app.get("/api/rooms")
 async def list_rooms(session: AsyncSession = Depends(get_db)):
@@ -1271,6 +1423,12 @@ async def upload_file(
     # Build message tag based on type
     if file.content_type.startswith("image/"):
         content = f"[img]{url}[/img]"
+        # Only analyze images uploaded by CUSTOMERS as reference material
+        # Salesperson drafts/proposals should not be treated as customer preferences
+        async with SessionLocal() as room_session:
+            room = await room_session.get(Room, room_id)
+            if room and room.type == "customer_sales" and current_user.role == "customer":
+                asyncio.create_task(_analyze_reference_image(room_id, url))
     elif file.content_type == "application/pdf":
         extracted = _extract_pdf_text(data)
         content = f"[pdf]{url}|{original_name}[/pdf]"
