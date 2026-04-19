@@ -78,35 +78,6 @@
         </div>
       </div>
 
-      <!-- Orders Panel -->
-      <div class="sidebar-section" id="ordersPanelSection">
-        <div class="section-label orders-label">
-          Orders
-          <button class="btn-icon-sm" id="refreshOrdersBtn" title="Refresh">↻</button>
-        </div>
-        <div id="orderPanel">
-          <div class="order-empty">No orders yet</div>
-        </div>
-      </div>
-
-      <!-- Quick Quote -->
-      <div class="sidebar-section">
-        <div class="section-label">
-          Quick Quote
-          <span class="img-status-dot" id="imgStatusDot" title="Image server status"></span>
-        </div>
-        <div class="quote-form" id="quoteForm">
-          <input class="field small" id="quoteMaterial" placeholder="Material (e.g. vinyl)">
-          <div class="quote-dims">
-            <input class="field small" id="quoteWidth"  type="number" placeholder="W (cm)" min="1">
-            <span class="quote-x">×</span>
-            <input class="field small" id="quoteHeight" type="number" placeholder="H (cm)" min="1">
-          </div>
-          <input class="field small" id="quoteQty" type="number" placeholder="Qty" min="1" value="1">
-          <button class="btn btn-ghost small" id="quoteBtn">Get Quote</button>
-          <div class="quote-result hidden" id="quoteResult"></div>
-        </div>
-      </div>
 
     </aside>
 
@@ -130,6 +101,7 @@
             <span class="chat-room-desc" id="currentRoomDesc"></span>
           </div>
           <div class="header-actions">
+            <button class="btn btn-ghost small hidden" id="summaryToggleBtn">⚡ Summary</button>
             <div class="search-box">
               <input class="field small" id="searchInput" placeholder="Search…" autocomplete="off">
               <button class="btn-icon search-clear hidden" id="searchClearBtn">✕</button>
@@ -143,6 +115,28 @@
 
         <div class="typing-indicator hidden" id="typingIndicator"></div>
 
+        <div class="brief-panel hidden" id="briefPanel">
+          <div class="brief-panel-header">
+            <span>📋 Order Brief — only you can see this</span>
+            <button class="btn-icon" id="briefDismiss" title="Dismiss">✕</button>
+          </div>
+          <div class="brief-body" id="briefBody"></div>
+          <div class="brief-actions">
+            <button class="btn btn-primary small" id="briefSendBtn">Send to Room</button>
+            <button class="btn btn-ghost small" id="briefDismiss2">Dismiss</button>
+          </div>
+        </div>
+      <div class="order-confirm-panel hidden" id="orderConfirmPanel">
+        <div class="brief-panel-header">
+          <span>✅ Confirm Order Completion — only you can see this</span>
+          <button class="btn-icon" id="orderConfirmDismiss" title="Dismiss">✕</button>
+        </div>
+        <div class="order-confirm-body" id="orderConfirmBody"></div>
+        <div class="brief-actions">
+          <button class="btn btn-complete small" id="orderConfirmBtn">Mark as Completed</button>
+          <button class="btn btn-ghost small" id="orderConfirmDismiss2">Cancel</button>
+        </div>
+      </div>
         <div class="composer">
           <input type="file" id="fileInput" accept="image/*,.pdf,.txt" class="hidden">
           <button class="btn-icon" id="attachBtn" title="Upload image / PDF / TXT">📎</button>
@@ -151,6 +145,30 @@
           <button class="btn btn-primary" id="sendBtn">Send</button>
         </div>
       </div>
+      <!-- Salesperson Summary Panel — hidden for customers / non-sales-rooms -->
+      <aside class="summary-panel hidden" id="summaryPanel">
+        <div class="summary-panel-header">
+          <div class="summary-panel-title">
+            <span class="summary-icon">⚡</span>
+            <span>AI Summary</span>
+          </div>
+          <button class="btn-icon" id="summaryCloseBtn" title="Close">✕</button>
+        </div>
+        <div class="summary-panel-content">
+          <div class="summary-empty" id="summaryEmpty">
+            <div class="summary-empty-icon">◈</div>
+            <p>Click Summarize to generate a live order brief from this conversation.</p>
+          </div>
+          <div class="summary-output hidden" id="summaryOutput"></div>
+        </div>
+        <div class="summary-panel-footer">
+          <button class="btn btn-summarize" id="summarizeBtn">
+            <span id="summarizeBtnText">Summarize</span>
+          </button>
+          <button class="btn btn-ghost small hidden" id="summaryCopyBtn">Copy</button>
+          <button class="btn btn-ghost small hidden" id="summarySendBtn">Send to Room</button>
+        </div>
+      </aside>
 
     </main>
   </div>

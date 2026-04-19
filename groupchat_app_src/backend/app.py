@@ -12,12 +12,14 @@ from typing import Optional
 from sqlalchemy import select, desc, delete, text, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from dotenv import load_dotenv
+import asyncio as _asyncio
+import base64
 
 from db import SessionLocal, init_db, User, Message, Room, RoomMember, MessageReaction, Order, ProductionCapability
 from auth import get_password_hash, verify_password, create_access_token, get_current_user_token, decode_token
 from websocket_manager import ConnectionManager
-from llm import chat_completion, generate_image, image_server_available
-from embedding import embed_document, retrieve_relevant_chunks
+from llm import chat_completion, generate_image, image_server_available,update_rolling_brief, generate_final_brief,tag_design_image, format_design_tags_for_embedding
+from embedding import embed_document, retrieve_relevant_chunks, embed_capabilities, embed_order,retrieve_similar_capabilities, retrieve_similar_orders,reembed_order_with_tags
 
 load_dotenv()
 
@@ -210,39 +212,50 @@ async def broadcast_message(msg: Message, username: str, session: AsyncSession):
     })
 
 
+async def _tag_and_embed_order(order_id: int):
+    """
+    Background task — runs after an order is marked completed.
+    1. If the order has a design_file_url, sends it to the vision model for tagging
+    2. Embeds the order + tags into ChromaDB past_orders collection
+    """
+    async with SessionLocal() as session:
+        order = await session.get(Order, order_id)
+        if not order:
+            return
+
+        cu = await session.get(User, order.customer_id) if order.customer_id else None
+        su = await session.get(User, order.salesperson_id) if order.salesperson_id else None
+        customer_name = cu.username if cu else None
+        salesperson_name = su.username if su else None
+
+        # Get design tags if image exists
+        design_tags_text = None
+        if order.design_file_url:
+            tags_dict = await tag_design_image(order.design_file_url)
+            if "error" not in tags_dict:
+                design_tags_text = format_design_tags_for_embedding(tags_dict)
+                print(f"✓ Order #{order_id} tagged: {tags_dict.get('theme_keywords', [])}")
+            else:
+                print(f"⚠ Order #{order_id} tagging failed: {tags_dict['error']}")
+
+        # Embed into ChromaDB
+        await _asyncio.get_event_loop().run_in_executor(
+            None,
+            embed_order,
+            order,
+            customer_name,
+            salesperson_name,
+            design_tags_text,
+        )
+        print(f"✓ Order #{order_id} embedded into past_orders collection")
+
+
 # ─────────────────────────── AI helpers ─────────────────────────
 
 def _detect_image_trigger(content: str) -> bool:
     lower = content.lower()
     return any(kw in lower for kw in IMAGE_KEYWORDS)
 
-async def _fetch_similar_orders(material_hint: str, limit: int = 3) -> list[Order]:
-    """Return past completed/in_production orders whose material matches the hint."""
-    if not material_hint:
-        return []
-    async with SessionLocal() as session:
-        res = await session.execute(
-            select(Order)
-            .where(
-                Order.material.ilike(f"%{material_hint}%"),
-                Order.status.in_(["completed", "in_production"]),
-            )
-            .order_by(desc(Order.created_at))
-            .limit(limit)
-        )
-        return res.scalars().all()
-
-async def _fetch_capability_for_material(material_hint: str) -> Optional[ProductionCapability]:
-    async with SessionLocal() as session:
-        res = await session.execute(
-            select(ProductionCapability).where(
-                or_(
-                    ProductionCapability.name.ilike(f"%{material_hint}%"),
-                    ProductionCapability.material_type.ilike(f"%{material_hint}%"),
-                )
-            ).limit(1)
-        )
-        return res.scalar_one_or_none()
 
 def _extract_material_hint(content: str) -> str:
     """Very simple keyword scan to detect a mentioned material."""
@@ -254,6 +267,30 @@ def _extract_material_hint(content: str) -> str:
             return m
     return ""
 
+def _extract_image_urls(content: str) -> list[str]:
+    """Extract all image URLs from [img]...[/img] tags in a message."""
+    return re.findall(r'\[img\](.*?)\[/img\]', content)
+
+def _strip_image_tags(content: str) -> str:
+    """Remove [img] tags and prompt lines from message content."""
+    text = re.sub(r'\[img\].*?\[/img\]', '', content)
+    text = re.sub(r'\nPrompt: [^\n]+', '', text)
+    return text.strip()
+
+def _load_image_as_base64(img_url: str) -> str | None:
+    """
+    Load an image from a /uploads/ or /images/ URL and return base64 string.
+    Returns None if file not found or unreadable.
+    """
+    try:
+        base_dir = Path(__file__).parent.parent
+        fs_path = base_dir / img_url.lstrip("/")
+        if not fs_path.exists():
+            return None
+        return base64.b64encode(fs_path.read_bytes()).decode("utf-8")
+    except Exception:
+        return None
+
 
 async def maybe_answer_with_llm(
     room_id: int,
@@ -261,27 +298,136 @@ async def maybe_answer_with_llm(
     sender_username: str = None,
     sender_role: str = None,
     room_type: str = "general",
+    sender_user_id: int = None,
 ):
-    has_question   = "?" in content or "？" in content
-    image_trigger  = _detect_image_trigger(content)
-    material_hint  = _extract_material_hint(content)
+    stripped = content.strip()
 
-    if not has_question and not image_trigger:
+    # Only respond to explicit @bot mentions
+    if not stripped.lower().startswith("@bot"):
         return
 
-    # ── Fetch context data ─────────────────────────────────────
+    # Strip @bot prefix to get the actual query
+    query = stripped[4:].strip()
+    image_trigger = _detect_image_trigger(query)
+
+    # ── @bot brief — salesperson requests order brief ──────────────────────
+    if query.lower() in ("brief", "summary", "summarize", "总结", "摘要"):
+        if sender_role not in ("salesperson", "admin"):
+            async with SessionLocal() as session:
+                msg = Message(
+                    room_id=room_id, user_id=None,
+                    content="Order briefs are only available to salespersons and admins.",
+                    is_bot=True,
+                )
+                session.add(msg)
+                await session.commit()
+                await session.refresh(msg)
+                await broadcast_message(msg, "LLM Bot", session)
+            return
+
+        brief_dict = await generate_final_brief(room_id)
+
+        # Format the brief as a readable message
+        if "error" in brief_dict:
+            reply = f"(Brief error) {brief_dict['error']}"
+        else:
+            import json as _json
+            reply = "📋 **Order Brief** (visible to you only — confirm to share with room)\n\n"
+            reply += "```json\n" + _json.dumps(brief_dict, indent=2, ensure_ascii=False) + "\n```"
+
+        # Send privately to salesperson only
+        if sender_user_id:
+            await manager.broadcast_to_users([sender_user_id], {
+                "type": "private_brief",
+                "content": reply,
+                "brief": brief_dict,
+                "room_id": room_id,
+            })
+        return
+    # ── @bot achieve — salesperson marks order as complete ─────────────────
+    if query.lower() in ("achieve",):
+        if sender_role not in ("salesperson", "admin"):
+            async with SessionLocal() as session:
+                msg = Message(
+                    room_id=room_id, user_id=None,
+                    content="Only salespersons and admins can complete orders.",
+                    is_bot=True,
+                )
+                session.add(msg)
+                await session.commit()
+                await session.refresh(msg)
+                await broadcast_message(msg, "LLM Bot", session)
+            return
+
+        async with SessionLocal() as session:
+            res = await session.execute(
+                select(Order)
+                .where(
+                    Order.room_id == room_id,
+                    Order.status.notin_(["completed", "cancelled"]),
+                )
+                .order_by(desc(Order.created_at))
+                .limit(1)
+            )
+            order = res.scalar_one_or_none()
+
+            if not order:
+                msg = Message(
+                    room_id=room_id, user_id=None,
+                    content="No active order found for this room.",
+                    is_bot=True,
+                )
+                session.add(msg)
+                await session.commit()
+                await session.refresh(msg)
+                await broadcast_message(msg, "LLM Bot", session)
+                return
+
+            cu = await session.get(User, order.customer_id) if order.customer_id else None
+            su = await session.get(User, order.salesperson_id) if order.salesperson_id else None
+
+            order_data = {
+                "id": order.id,
+                "material": order.material,
+                "size": order.size,
+                "quantity": order.quantity,
+                "unit_price": order.unit_price,
+                "total_price": order.total_price,
+                "status": order.status,
+                "design_phase": order.design_phase,
+                "notes": order.notes,
+                "design_file_url": order.design_file_url,
+                "customer_username": cu.username if cu else "unknown",
+                "salesperson_username": su.username if su else "unknown",
+            }
+
+        if sender_user_id:
+            await manager.broadcast_to_users([sender_user_id], {
+                "type": "private_order_confirm",
+                "order": order_data,
+            })
+        return
+
+
+    # ── @bot <question> — regular AI response ─────────────────────────────
+
+    material_hint  = _extract_material_hint(query)
     orders_context = ""
     similar_context = ""
     pricing_context = ""
 
     async with SessionLocal() as session:
-        # Recent orders for the sender
+        # Fetch sender's recent orders
         q = select(Order).order_by(desc(Order.created_at)).limit(5)
         if sender_role == "customer" and sender_username:
-            user_res = await session.execute(select(User).where(User.username == sender_username))
+            user_res = await session.execute(
+                select(User).where(User.username == sender_username)
+            )
             sender_user = user_res.scalar_one_or_none()
             if sender_user:
-                q = select(Order).where(Order.customer_id == sender_user.id).order_by(desc(Order.created_at)).limit(5)
+                q = select(Order).where(
+                    Order.customer_id == sender_user.id
+                ).order_by(desc(Order.created_at)).limit(5)
         res = await session.execute(q)
         recent_orders = res.scalars().all()
         if recent_orders:
@@ -293,36 +439,77 @@ async def maybe_answer_with_llm(
             ]
             orders_context = "Your recent orders:\n" + "\n".join(lines)
 
-    # Similar past orders (reference for customer)
-    if material_hint:
-        similar = await _fetch_similar_orders(material_hint)
-        if similar:
-            lines = [
-                f"  Past order #{o.id}: {o.material} {o.size} x{o.quantity}"
-                + (f" — ¥{o.total_price}" if o.total_price else "")
-                for o in similar
-            ]
-            similar_context = f"Past similar orders for '{material_hint}':\n" + "\n".join(lines)
-
-        cap = await _fetch_capability_for_material(material_hint)
-        if cap:
-            pricing_context = (
-                f"Pricing for {cap.name}: ¥{cap.price_per_sqm}/sqm, "
-                f"max size {cap.max_width_cm}×{cap.max_height_cm} cm, "
-                f"lead time {cap.lead_time_days} days. {cap.notes or ''}"
-            )
-
-    # ── RAG: retrieve relevant chunks from uploaded files ─────
-    file_context = ""
-    if has_question:
-        import asyncio as _asyncio
-        chunks = await _asyncio.get_event_loop().run_in_executor(
-            None, retrieve_relevant_chunks, content, room_id, 5
+        # ── Fetch conversation history (last 10 messages) ──────────────────
+        history_res = await session.execute(
+            select(Message)
+            .where(Message.room_id == room_id)
+            .order_by(desc(Message.id))
+            .limit(10)
         )
-        if chunks:
-            file_context = "Relevant excerpts from uploaded documents:\n" + "\n---\n".join(chunks)
+        history_msgs = list(reversed(history_res.scalars().all()))
 
-    # ── Build system prompt ────────────────────────────────────
+        history_for_llm = []
+        for m in history_msgs:
+            role = "assistant" if m.is_bot else "user"
+            uname = "Bot"
+            if not m.is_bot and m.user_id:
+                u = await session.get(User, m.user_id)
+                uname = u.username if u else "unknown"
+            prefix = "" if m.is_bot else f"[{uname}] "
+
+            # Check if message contains an image tag
+            image_urls = _extract_image_urls(m.content)
+            plain_text = _strip_image_tags(m.content)
+
+            if image_urls:
+                # Build multimodal content block
+                content_parts = []
+                for img_url in image_urls:
+                    b64 = _load_image_as_base64(img_url)
+                    if b64:
+                        ext = img_url.rsplit(".", 1)[-1].lower()
+                        media_type = "image/png" if ext == "png" else "image/jpeg" if ext in ("jpg", "jpeg") else "image/webp"
+                        content_parts.append({
+                            "type": "image_url",
+                            "image_url": {"url": f"data:{media_type};base64,{b64}"}
+                        })
+                if plain_text.strip():
+                    content_parts.append({"type": "text", "text": prefix + plain_text.strip()})
+                history_for_llm.append({"role": role, "content": content_parts})
+            else:
+                history_for_llm.append({"role": role, "content": prefix + m.content})
+
+    # Similar past orders and pricing
+
+    cap_chunks = await _asyncio.get_event_loop().run_in_executor(
+        None, retrieve_similar_capabilities, query, 3
+    )
+    if cap_chunks:
+        pricing_context = "Relevant production capabilities:\n" + "\n---\n".join(cap_chunks)
+
+    order_matches = await _asyncio.get_event_loop().run_in_executor(
+        None, retrieve_similar_orders, query, 3
+    )
+    if order_matches:
+        lines = []
+        for match in order_matches:
+            meta = match["metadata"]
+            line = f"  Order #{meta['order_id']}: {meta['material']} {meta['size']}"
+            if meta.get("design_url"):
+                line += f" — design: {meta['design_url']}"
+            lines.append(line)
+            lines.append(f"  {match['text'][:200]}...")
+        similar_context = "Similar past orders from archive:\n" + "\n".join(lines)
+
+    # RAG over uploaded files
+    file_context = ""
+    chunks = await _asyncio.get_event_loop().run_in_executor(
+        None, retrieve_relevant_chunks, query, room_id, 5
+    )
+    if chunks:
+        file_context = "Relevant excerpts from uploaded documents:\n" + "\n---\n".join(chunks)
+
+    # Build system prompt
     room_desc = {
         "customer_sales":   "a customer-salesperson conversation room",
         "sales_production": "a salesperson-production coordination room",
@@ -330,13 +517,15 @@ async def maybe_answer_with_llm(
     }.get(room_type, "a chat room")
 
     role_instructions = {
-        "customer":     "The user is a customer. Help them understand order status, pricing, and timelines. Be friendly and clear.",
-        "salesperson":  "The user is a salesperson. Provide detailed pricing, material specs, and production capabilities to help them quote accurately.",
-        "production":   "The user is a production team member. Focus on technical specs, capacity, scheduling, and material requirements.",
-        "admin":        "The user is an admin. Provide comprehensive information.",
+        "customer":    "The user is a customer. Help them understand order status, pricing, and timelines. Be friendly and clear.",
+        "salesperson": "The user is a salesperson. Provide detailed pricing, material specs, and production capabilities.",
+        "production":  "The user is a production team member. Focus on technical specs, capacity, and scheduling.",
+        "admin":       "The user is an admin. Provide comprehensive information.",
     }.get(sender_role or "customer", "")
 
-    context_blocks = "\n\n".join(filter(None, [orders_context, similar_context, pricing_context, file_context]))
+    context_blocks = "\n\n".join(filter(None, [
+        orders_context, similar_context, pricing_context, file_context
+    ]))
 
     system_prompt = f"""You are an AI assistant for a design company CRM system.
 
@@ -348,19 +537,21 @@ Context:
 {context_blocks}
 
 Guidelines:
-- For pricing questions, reference similar past orders and production capabilities above.
+- For pricing questions, show the calculation (e.g., 1.2m × 2.4m = 2.88 sqm × ¥120 = ¥345.60).
 - For order status, reference the user's recent orders above.
-- When you suggest a price, show the calculation (e.g., 1.2m × 2.4m = 2.88 sqm × ¥120 = ¥345.60).
 - Keep responses concise and practical.
-- If uploaded file contents are provided above, reference them when answering related questions."""
+- The conversation history below gives you context of what was just discussed."""
 
-    # ── Text response ──────────────────────────────────────────
-    if has_question:
+    # ── Text response ──────────────────────────────────────────────────────
+    if not image_trigger:
         try:
-            reply_text = await chat_completion([
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": content},
-            ])
+            # Pass full conversation history + current query
+            messages_for_llm = (
+                [{"role": "system", "content": system_prompt}]
+                + history_for_llm
+                + [{"role": "user", "content": query}]
+            )
+            reply_text = await chat_completion(messages_for_llm, max_tokens=512)
         except Exception as e:
             reply_text = f"(LLM error) {e}"
 
@@ -371,9 +562,9 @@ Guidelines:
             await session.refresh(bot_msg)
             await broadcast_message(bot_msg, "LLM Bot", session)
 
-    # ── Image generation ───────────────────────────────────────
+    # ── Image generation ───────────────────────────────────────────────────
     if image_trigger:
-        asyncio.create_task(_generate_and_post_image(room_id, content))
+        asyncio.create_task(_generate_and_post_image(room_id, query))
 
 
 async def _generate_and_post_image(room_id: int, prompt: str):
@@ -415,7 +606,6 @@ async def _generate_and_post_image(room_id: int, prompt: str):
 @app.on_event("startup")
 async def on_startup():
     await init_db()
-    # Add design_phase column if it doesn't exist (safe migration)
     async with SessionLocal() as session:
         try:
             await session.execute(
@@ -423,7 +613,18 @@ async def on_startup():
             )
             await session.commit()
         except Exception:
-            pass  # column already exists
+            pass
+
+    # Embed production capabilities into ChromaDB on startup
+    # Skipped automatically if already embedded
+    async with SessionLocal() as session:
+        res = await session.execute(select(ProductionCapability))
+        caps = res.scalars().all()
+        if caps:
+            n = await _asyncio.get_event_loop().run_in_executor(
+                None, embed_capabilities, caps
+            )
+            print(f"✓ Capabilities embedded: {n} entries in ChromaDB")
 
 
 # ─────────────────────────── Auth routes ────────────────────────
@@ -502,6 +703,21 @@ async def get_my_rooms(
     )
     rooms = res.scalars().all()
     return {"rooms": [{"id": r.id, "name": r.name, "description": r.description, "type": r.type} for r in rooms]}
+
+@app.get("/api/rooms/{room_id}/brief")
+async def get_room_brief(
+    room_id: int,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """HTTP endpoint for the salesperson summary panel. Returns the brief as JSON."""
+    if current_user.role not in ("salesperson", "admin"):
+        raise HTTPException(status_code=403, detail="Only salespersons and admins can access the brief")
+    room = await session.get(Room, room_id)
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    brief = await generate_final_brief(room_id)
+    return {"ok": True, "brief": brief}
 
 @app.post("/api/rooms/{room_id}/join")
 async def join_room(
@@ -600,7 +816,13 @@ async def post_room_message(
         sender_username=current_user.username,
         sender_role=current_user.role,
         room_type=room.type,
+        sender_user_id=current_user.id,
     ))
+
+    # Silently update rolling brief for customer_sales rooms
+    if room.type == "customer_sales":
+        asyncio.create_task(update_rolling_brief(room_id))
+
     return {"ok": True, "id": m.id}
 
 @app.delete("/api/rooms/{room_id}/messages")
@@ -672,7 +894,7 @@ async def create_order(
         if not payload.customer_id:
             raise HTTPException(status_code=400, detail="customer_id required")
         customer_id = payload.customer_id
-
+    
     total = None
     if payload.unit_price and payload.quantity:
         total = round(payload.unit_price * payload.quantity, 2)
@@ -768,6 +990,7 @@ async def update_order(
     if payload.status not in VALID_STATUSES:
         raise HTTPException(status_code=400, detail=f"Invalid status. Choose from: {VALID_STATUSES}")
 
+
     order.status = payload.status
     if payload.unit_price is not None:
         order.unit_price = payload.unit_price
@@ -778,6 +1001,11 @@ async def update_order(
         order.salesperson_id = current_user.id
 
     await session.commit()
+
+    # ── If order just completed, tag design and embed into ChromaDB ────────
+    if payload.status == "completed":
+        asyncio.create_task(_tag_and_embed_order(order.id))
+
     return {"ok": True, "order": serialize_order(order)}
 
 @app.patch("/api/orders/{order_id}/phase")
@@ -800,6 +1028,45 @@ async def update_order_phase(
     order.design_phase = payload.design_phase
     await session.commit()
     return {"ok": True, "order": serialize_order(order)}
+
+
+@app.post("/api/orders/{order_id}/design")
+async def upload_order_design(
+    order_id: int,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """
+    Upload the final confirmed design file for an order.
+    Salesperson/admin only. Triggers re-embedding if order is completed.
+    """
+    if current_user.role not in ("salesperson", "admin"):
+        raise HTTPException(status_code=403, detail="Only salespersons and admins can upload design files")
+
+    order = await session.get(Order, order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    if file.content_type not in {"image/jpeg", "image/png", "image/webp"}:
+        raise HTTPException(status_code=400, detail="Only JPEG, PNG, and WebP images are accepted")
+
+    data = await file.read()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail="File too large (max 10MB)")
+
+    ext = Path(file.filename).suffix.lower() or ".png"
+    filename = f"design_order{order_id}_{uuid.uuid4().hex[:8]}{ext}"
+    (UPLOADS_DIR / filename).write_bytes(data)
+
+    order.design_file_url = f"/uploads/{filename}"
+    await session.commit()
+
+    # Re-tag and re-embed if order is already completed
+    if order.status == "completed":
+        asyncio.create_task(_tag_and_embed_order(order_id))
+
+    return {"ok": True, "design_file_url": order.design_file_url}
 
 
 # ─────────────────────────── Capabilities & Quote ───────────────
@@ -1013,7 +1280,6 @@ async def upload_file(
 
     # Embed PDF/TXT into vector store for RAG (run in thread, await completion)
     if not file.content_type.startswith("image/") and extracted:
-        import asyncio as _asyncio
         await _asyncio.get_event_loop().run_in_executor(
             None, embed_document, filename, room_id, original_name, extracted
         )

@@ -37,17 +37,12 @@ const typingIndicator = $("typingIndicator");
 const clearHistoryBtn = $("clearHistoryBtn");
 const searchInput     = $("searchInput");
 const searchClearBtn  = $("searchClearBtn");
-const orderPanel      = $("orderPanel");
-const refreshOrdersBtn= $("refreshOrdersBtn");
 
-// Quote panel
-const quoteMaterial   = $("quoteMaterial");
-const quoteWidth      = $("quoteWidth");
-const quoteHeight     = $("quoteHeight");
-const quoteQty        = $("quoteQty");
-const quoteBtn        = $("quoteBtn");
-const quoteResult     = $("quoteResult");
-const imgStatusDot    = $("imgStatusDot");
+const orderConfirmPanel    = $("orderConfirmPanel");
+const orderConfirmBody     = $("orderConfirmBody");
+const orderConfirmBtn      = $("orderConfirmBtn");
+const orderConfirmDismiss  = $("orderConfirmDismiss");
+const orderConfirmDismiss2 = $("orderConfirmDismiss2");
 
 // Generate modal
 const generateModal      = $("generateModal");
@@ -57,6 +52,23 @@ const genHeight          = $("genHeight");
 const generateError      = $("generateError");
 const generateSubmitBtn  = $("generateSubmitBtn");
 const generateCancelBtn  = $("generateCancelBtn");
+
+const briefPanel    = $("briefPanel");
+const briefBody     = $("briefBody");
+const briefSendBtn  = $("briefSendBtn");
+const briefDismiss  = $("briefDismiss");
+const briefDismiss2 = $("briefDismiss2");
+
+// Summary panel
+const summaryPanel      = $("summaryPanel");
+const summaryEmpty      = $("summaryEmpty");
+const summaryOutput     = $("summaryOutput");
+const summarizeBtn      = $("summarizeBtn");
+const summarizeBtnText  = $("summarizeBtnText");
+const summaryCopyBtn    = $("summaryCopyBtn");
+const summarySendBtn    = $("summarySendBtn");
+const summaryToggleBtn  = $("summaryToggleBtn");
+const summaryCloseBtn   = $("summaryCloseBtn");
 
 // ─── State ───────────────────────────────────────────────────────────────────
 const API = location.origin + "/api";
@@ -69,12 +81,13 @@ let allRooms     = [];
 let ws;
 let unreadCounts = {};
 let mentionRooms = new Set();
-
+let pendingOrderConfirm = null;
 let onlineUsers    = new Set();
 let typingUsers    = {};
 let typingDebounce = null;
 let searchDebounce = null;
 let searchQuery    = "";
+let pendingBrief = null;
 
 const EMOJI_OPTIONS = ["👍", "❤️", "😂", "😮", "😢", "🎉"];
 
@@ -179,7 +192,6 @@ async function initApp() {
   requestNotificationPermission();
   await loadMyRooms();
   await loadRooms();
-  await loadOrders();
   connectWS();
   checkImageServerStatus();
 
@@ -261,6 +273,12 @@ async function handleRoomClick(room) {
   await switchRoom(room);
 }
 
+function handlePrivateBrief(data) {
+  pendingBrief = data.brief;
+  briefBody.textContent = JSON.stringify(data.brief, null, 2);
+  briefPanel.classList.remove("hidden");
+}
+
 async function switchRoom(room) {
   activeRoomId = room.id;
   localStorage.setItem("lastRoomId", room.id);
@@ -281,6 +299,14 @@ async function switchRoom(room) {
     roomTypeBadge.classList.remove("hidden");
   } else {
     roomTypeBadge.classList.add("hidden");
+  }
+
+  // Show summary toggle only for salespersons/admins in customer_sales rooms
+  if ((currentRole === "salesperson" || currentRole === "admin") && room.type === "customer_sales") {
+    summaryToggleBtn.classList.remove("hidden");
+  } else {
+    summaryToggleBtn.classList.add("hidden");
+    closeSummaryPanel();
   }
 
   emptyState.classList.add("hidden");
@@ -358,6 +384,112 @@ leaveRoomBtn.onclick = async () => {
   } catch (e) {}
 };
 
+// Summary panel toggle
+summaryToggleBtn.onclick = () => {
+  if (summaryPanel.classList.contains("hidden")) {
+    summaryPanel.classList.remove("hidden");
+    appEl.classList.add("has-summary");
+    summaryToggleBtn.textContent = "✕ Summary";
+  } else {
+    closeSummaryPanel();
+  }
+};
+
+summaryCloseBtn.onclick = closeSummaryPanel;
+
+function closeSummaryPanel() {
+  summaryPanel.classList.add("hidden");
+  appEl.classList.remove("has-summary");
+  summaryToggleBtn.textContent = "⚡ Summary";
+}
+
+summarizeBtn.onclick = async () => {
+  if (!activeRoomId) return;
+  summarizeBtn.disabled = true;
+  summarizeBtnText.textContent = "Generating…";
+  summaryEmpty.classList.add("hidden");
+  summaryOutput.classList.add("hidden");
+  summaryOutput.innerHTML = "";
+
+  try {
+    const data = await callAPI(`/rooms/${activeRoomId}/brief`);
+    renderSummary(data.brief);
+    summaryOutput.classList.remove("hidden");
+    summaryCopyBtn.classList.remove("hidden");
+    summarySendBtn.classList.remove("hidden");
+  } catch (e) {
+    summaryEmpty.classList.remove("hidden");
+    summaryEmpty.querySelector("p").textContent = `Error: ${e.message}`;
+  } finally {
+    summarizeBtn.disabled = false;
+    summarizeBtnText.textContent = "Summarize";
+  }
+};
+
+summaryCopyBtn.onclick = () => {
+  const text = summaryOutput.innerText;
+  navigator.clipboard.writeText(text).then(() => {
+    summaryCopyBtn.textContent = "Copied!";
+    setTimeout(() => summaryCopyBtn.textContent = "Copy", 2000);
+  });
+};
+
+summarySendBtn.onclick = async () => {
+  if (!activeRoomId) return;
+  const text = summaryOutput.innerText;
+  if (!text) return;
+  try {
+    await callAPI(`/rooms/${activeRoomId}/messages`, "POST", { content: text });
+    summarySendBtn.textContent = "Sent!";
+    setTimeout(() => summarySendBtn.textContent = "Send to Room", 2000);
+  } catch (e) {
+    console.error("Failed to send summary:", e);
+  }
+};
+
+
+// Dismiss brief panel
+briefDismiss.onclick = briefDismiss2.onclick = () => {
+  briefPanel.classList.add("hidden");
+  pendingBrief = null;
+};
+
+// Order confirm panel
+orderConfirmDismiss.onclick = orderConfirmDismiss2.onclick = () => {
+  orderConfirmPanel.classList.add("hidden");
+  pendingOrderConfirm = null;
+};
+
+orderConfirmBtn.onclick = async () => {
+  if (!pendingOrderConfirm) return;
+  const orderId = pendingOrderConfirm.id;
+  try {
+    await callAPI(`/orders/${pendingOrderConfirm.id}`, "PATCH", {
+      status: "completed",
+    });
+    orderConfirmPanel.classList.add("hidden");
+    pendingOrderConfirm = null;
+    // Post a confirmation message to the room
+    await callAPI(`/rooms/${activeRoomId}/messages`, "POST", {
+      content: `✅ Order #${pendingOrderConfirm?.id || ""} has been marked as completed.`
+    });
+  } catch (e) {
+    console.error("Failed to complete order:", e);
+  }
+};
+
+// Send brief to room as official message
+briefSendBtn.onclick = async () => {
+  if (!pendingBrief || !activeRoomId) return;
+  const formatted = formatBriefForRoom(pendingBrief);
+  try {
+    await callAPI(`/rooms/${activeRoomId}/messages`, "POST", { content: formatted });
+    briefPanel.classList.add("hidden");
+    pendingBrief = null;
+  } catch (e) {
+    console.error("Failed to send brief:", e);
+  }
+};
 
 // ─── Messages ────────────────────────────────────────────────────────────────
 function addMessage(m) {
@@ -487,13 +619,6 @@ generateSubmitBtn.onclick = async () => {
 
 
 // ─── Orders Panel ────────────────────────────────────────────────────────────
-async function loadOrders() {
-  try {
-    const endpoint = currentRole === "customer" ? "/orders/my" : "/orders";
-    const data = await callAPI(endpoint);
-    renderOrderPanel(data.orders || []);
-  } catch (e) {}
-}
 
 function renderOrderPanel(orders) {
   if (orders.length === 0) {
@@ -543,43 +668,49 @@ function renderOrderPanel(orders) {
   });
 }
 
-refreshOrdersBtn.onclick = loadOrders;
+function handleOrderConfirm(data) {
+  const o = data.order;
+  pendingOrderConfirm = o;
 
+  const rows = [
+    ["Order ID",    `#${o.id}`],
+    ["Material",    o.material],
+    ["Size",        o.size],
+    ["Quantity",    o.quantity],
+    ["Unit Price",  o.unit_price ? `¥${o.unit_price}` : "—"],
+    ["Total Price", o.total_price ? `¥${o.total_price}` : "—"],
+    ["Status",      o.status],
+    ["Phase",       o.design_phase],
+    ["Customer",    o.customer_username],
+    ["Notes",       o.notes || "—"],
+  ];
 
-// ─── Quick Quote ─────────────────────────────────────────────────────────────
-quoteBtn.onclick = async () => {
-  const material = quoteMaterial.value.trim();
-  const w = parseFloat(quoteWidth.value);
-  const h = parseFloat(quoteHeight.value);
-  const qty = parseInt(quoteQty.value) || 1;
+  let html = rows.map(([label, value]) => `
+    <div class="field-row">
+      <span class="field-label">${escapeHtml(label)}</span>
+      <span class="field-value">${escapeHtml(String(value))}</span>
+    </div>
+  `).join("");
 
-  if (!material || !w || !h) {
-    quoteResult.textContent = "Fill in material, width, and height.";
-    quoteResult.classList.remove("hidden");
-    return;
-  }
-
-  quoteResult.textContent = "Calculating…";
-  quoteResult.classList.remove("hidden");
-
-  try {
-    const data = await callAPI("/capabilities/quote", "POST", {
-      material_keyword: material,
-      width_cm: w,
-      height_cm: h,
-      quantity: qty,
-    });
-    quoteResult.innerHTML = `
-      <div class="quote-line"><strong>${escapeHtml(data.capability)}</strong></div>
-      <div class="quote-line">${data.width_cm}×${data.height_cm}cm = ${data.sqm} m²</div>
-      <div class="quote-line">¥${data.price_per_sqm}/m² × ${qty} = <strong>¥${data.total_price.toLocaleString()}</strong></div>
-      <div class="quote-line text-dim">Lead time: ${data.lead_time_days} days</div>
-      ${data.notes ? `<div class="quote-line text-dim">${escapeHtml(data.notes)}</div>` : ""}
+  if (o.design_file_url) {
+    html += `
+      <div class="field-row" style="margin-top:8px">
+        <span class="field-label">Design File</span>
+      </div>
+      <img class="design-preview" src="${escapeHtml(o.design_file_url)}" alt="Design">
     `;
-  } catch (e) {
-    quoteResult.textContent = e.message;
+  } else {
+    html += `
+      <div class="field-row" style="margin-top:8px">
+        <span class="field-label">Design File</span>
+        <span class="field-value" style="color:var(--text-muted)">No design file attached</span>
+      </div>
+    `;
   }
-};
+
+  orderConfirmBody.innerHTML = html;
+  orderConfirmPanel.classList.remove("hidden");
+}
 
 
 // ─── Reactions ───────────────────────────────────────────────────────────────
@@ -730,6 +861,8 @@ function connectWS() {
         case "user_offline":    handleUserOffline(data);        break;
         case "typing":          handleTyping(data);             break;
         case "reaction_update": handleReactionUpdate(data);     break;
+        case "private_brief":   handlePrivateBrief(data);      break;
+        case "private_order_confirm": handleOrderConfirm(data); break;
       }
     } catch (e) {}
   };
@@ -739,6 +872,105 @@ function connectWS() {
 
 
 // ─── Utilities ───────────────────────────────────────────────────────────────
+function renderSummary(brief) {
+  if (!brief || brief.error) {
+    summaryOutput.innerHTML = `<div style="color:var(--danger);font-size:12px">${escapeHtml(brief?.error || "Unknown error")}</div>`;
+    return;
+  }
+
+  const sections = [];
+
+  // Logistics
+  if (brief.logistics) {
+    const l = brief.logistics;
+    const fields = [
+      ["Material",  l.material],
+      ["Size",      l.size],
+      ["Quantity",  l.quantity],
+      ["Deadline",  l.deadline],
+      ["Location",  l.delivery_location],
+    ].filter(([, v]) => v != null);
+
+    if (fields.length) {
+      sections.push(`
+        <div class="summary-section">
+          <div class="summary-section-title">Logistics</div>
+          ${fields.map(([k, v]) => `
+            <div class="summary-field">
+              <span class="summary-field-label">${k}</span>
+              <span class="summary-field-value">${escapeHtml(String(v))}</span>
+            </div>`).join("")}
+        </div>`);
+    }
+  }
+
+  // Manufacturing
+  if (brief.manufacturing) {
+    const m = brief.manufacturing;
+    const fields = [
+      ["Print Method",  m.print_method],
+      ["Finishing",     m.finishing],
+      ["Resolution",    m.resolution],
+      ["Colour",        m.color_requirements],
+      ["Special Notes", m.special_notes],
+    ].filter(([, v]) => v != null);
+
+    if (fields.length) {
+      sections.push(`
+        <div class="summary-section">
+          <div class="summary-section-title">Manufacturing</div>
+          ${fields.map(([k, v]) => `
+            <div class="summary-field">
+              <span class="summary-field-label">${k}</span>
+              <span class="summary-field-value">${escapeHtml(String(v))}</span>
+            </div>`).join("")}
+        </div>`);
+    }
+  }
+
+  // Customer Intent
+  if (brief.customer_intent) {
+    const c = brief.customer_intent;
+    let html = `<div class="summary-section"><div class="summary-section-title">Customer Intent</div>`;
+    if (c.use_case) html += `<div class="summary-field"><span class="summary-field-label">Use Case</span><span class="summary-field-value">${escapeHtml(c.use_case)}</span></div>`;
+    if (c.budget_sensitivity) html += `<div class="summary-field"><span class="summary-field-label">Budget</span><span class="summary-field-value">${escapeHtml(c.budget_sensitivity)}</span></div>`;
+    if (c.tone_or_style) html += `<div class="summary-field"><span class="summary-field-label">Style</span><span class="summary-field-value">${escapeHtml(c.tone_or_style)}</span></div>`;
+    if (c.priorities?.length) {
+      html += `<div class="summary-field"><span class="summary-field-label">Priorities</span><div>${c.priorities.map(p => `<span class="summary-tag">${escapeHtml(p)}</span>`).join("")}</div></div>`;
+    }
+    if (c.rejected?.length) {
+      html += `<div class="summary-field"><span class="summary-field-label">Rejected</span><div>${c.rejected.map(r => `<span class="summary-tag rejected">${escapeHtml(r)}</span>`).join("")}</div></div>`;
+    }
+    html += `</div>`;
+    sections.push(html);
+  }
+
+  // Open Questions
+  if (brief.open_questions?.length) {
+    sections.push(`
+      <div class="summary-section">
+        <div class="summary-section-title">Open Questions</div>
+        ${brief.open_questions.map(q => `<span class="summary-tag question">? ${escapeHtml(q)}</span>`).join("")}
+      </div>`);
+  }
+
+  // Narrative summary
+  if (brief.narrative) {
+    sections.push(`
+      <div class="summary-section">
+        <div class="summary-narrative">${escapeHtml(brief.narrative)}</div>
+      </div>
+    `);
+  }
+
+  // Confidence
+  if (brief.confidence) {
+    sections.push(`<div class="summary-confidence ${brief.confidence}">Confidence: ${escapeHtml(brief.confidence)}</div>`);
+  }
+
+  summaryOutput.innerHTML = sections.join("");
+}
+
 function escapeHtml(str) {
   return String(str)
     .replace(/&/g, "&amp;")
@@ -782,6 +1014,45 @@ function renderContent(content) {
     });
 }
 
+function formatBriefForRoom(brief) {
+  const b = brief;
+  const lines = ["📋 Order Brief", ""];
+  if (b.logistics) {
+    lines.push("── Logistics ──");
+    if (b.logistics.material)           lines.push(`Material:  ${b.logistics.material}`);
+    if (b.logistics.size)               lines.push(`Size:      ${b.logistics.size}`);
+    if (b.logistics.quantity)           lines.push(`Quantity:  ${b.logistics.quantity}`);
+    if (b.logistics.deadline)           lines.push(`Deadline:  ${b.logistics.deadline}`);
+    if (b.logistics.delivery_location)  lines.push(`Location:  ${b.logistics.delivery_location}`);
+    lines.push("");
+  }
+  if (b.manufacturing) {
+    lines.push("── Manufacturing ──");
+    if (b.manufacturing.print_method)       lines.push(`Method:    ${b.manufacturing.print_method}`);
+    if (b.manufacturing.finishing)          lines.push(`Finishing: ${b.manufacturing.finishing}`);
+    if (b.manufacturing.color_requirements) lines.push(`Color:     ${b.manufacturing.color_requirements}`);
+    if (b.manufacturing.special_notes)      lines.push(`Notes:     ${b.manufacturing.special_notes}`);
+    lines.push("");
+  }
+  if (b.customer_intent) {
+    lines.push("── Customer Intent ──");
+    if (b.customer_intent.use_case)           lines.push(`Use case:  ${b.customer_intent.use_case}`);
+    if (b.customer_intent.budget_sensitivity) lines.push(`Budget:    ${b.customer_intent.budget_sensitivity}`);
+    if (b.customer_intent.tone_or_style)      lines.push(`Style:     ${b.customer_intent.tone_or_style}`);
+    if (b.customer_intent.priorities?.length)
+      lines.push(`Priorities: ${b.customer_intent.priorities.join(", ")}`);
+    if (b.customer_intent.rejected?.length)
+      lines.push(`Rejected:  ${b.customer_intent.rejected.join(", ")}`);
+    lines.push("");
+  }
+  if (b.open_questions?.length) {
+    lines.push("── Open Questions ──");
+    b.open_questions.forEach(q => lines.push(`? ${q}`));
+    lines.push("");
+  }
+  if (b.confidence) lines.push(`Confidence: ${b.confidence}`);
+  return lines.join("\n");
+}
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 if (token) {
