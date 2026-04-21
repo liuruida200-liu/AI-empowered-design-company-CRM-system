@@ -401,30 +401,26 @@ async def maybe_answer_with_llm(
             })
         return
     # ── @bot achieve — salesperson marks order as complete ─────────────────
-    if query.lower() in ("achieve",):
+    if query.lower() in ("archive",):
         if sender_role not in ("salesperson", "admin"):
-            async with SessionLocal() as session:
-                msg = Message(
-                    room_id=room_id, user_id=None,
-                    content="Only salespersons and admins can complete orders.",
-                    is_bot=True,
-                )
-                session.add(msg)
-                await session.commit()
-                await session.refresh(msg)
-                await broadcast_message(msg, "LLM Bot", session)
+            if sender_user_id:
+                await manager.broadcast_to_users([sender_user_id], {
+                    "type": "private_brief",
+                    "content": "Only salespersons and admins can complete orders.",
+                    "brief": {"error": "Only salespersons and admins can complete orders."},
+                    "room_id": room_id,
+                })
             return
 
-        async with SessionLocal() as session:
-            room = await session.get(Room, room_id)
-            if room and room.order_brief:
-                import json as _json
-                try:
-                    brief_data = _json.loads(room.order_brief)
-                    await _sync_brief_to_order(room_id, brief_data)
-                except Exception as e:
-                    print(f"⚠ Brief sync failed: {e}")
-                    
+        # Step 1 — sync brief to order
+        try:
+            brief_data = await generate_final_brief(room_id)
+            if brief_data and "error" not in brief_data:
+                await _sync_brief_to_order(room_id, brief_data)
+        except Exception as e:
+            print(f"⚠ Brief generation/sync failed: {e}")
+
+        # Step 2 — auto-attach + fetch order (single session)
         async with SessionLocal() as session:
             res = await session.execute(
                 select(Order)
@@ -438,16 +434,35 @@ async def maybe_answer_with_llm(
             order = res.scalar_one_or_none()
 
             if not order:
-                msg = Message(
-                    room_id=room_id, user_id=None,
-                    content="No active order found for this room.",
-                    is_bot=True,
-                )
-                session.add(msg)
-                await session.commit()
-                await session.refresh(msg)
-                await broadcast_message(msg, "LLM Bot", session)
+                if sender_user_id:
+                    await manager.broadcast_to_users([sender_user_id], {
+                        "type": "private_brief",
+                        "content": "No active order found for this room.",
+                        "brief": {"error": "No active order found for this room."},
+                        "room_id": room_id,
+                    })
                 return
+
+            # Auto-attach most recent salesperson image if no design file yet
+            if not order.design_file_url:
+                img_res = await session.execute(
+                    select(Message)
+                    .join(User, Message.user_id == User.id)
+                    .where(
+                        Message.room_id == room_id,
+                        Message.content.like("%[img]%"),
+                        User.role.in_(["salesperson", "admin"]),
+                    )
+                    .order_by(desc(Message.created_at))
+                    .limit(1)
+                )
+                img_msg = img_res.scalar_one_or_none()
+                if img_msg:
+                    urls = re.findall(r'\[img\](.*?)\[/img\]', img_msg.content)
+                    if urls:
+                        order.design_file_url = urls[0]
+                        await session.commit()
+                        print(f"✓ Auto-attached design file to order #{order.id}")
 
             cu = await session.get(User, order.customer_id) if order.customer_id else None
             su = await session.get(User, order.salesperson_id) if order.salesperson_id else None
@@ -532,7 +547,7 @@ async def maybe_answer_with_llm(
             image_urls = _extract_image_urls(m.content)
             plain_text = _strip_image_tags(m.content)
 
-            if image_urls:
+            if image_urls and not m.is_bot:
                 # Build multimodal content block
                 content_parts = []
                 for img_url in image_urls:
