@@ -41,6 +41,8 @@
   <!-- ───── Chat App ───── -->
   <div class="app hidden" id="app">
 
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
     <!-- Sidebar -->
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-header">
@@ -78,11 +80,21 @@
         </div>
       </div>
 
+      <div class="sidebar-section sidebar-status">
+        <span id="imgStatusDot" class="img-status-dot" title="Image server offline"></span>
+        <span class="sidebar-status-label">AI Image Gen</span>
+      </div>
 
     </aside>
 
     <!-- Main chat area -->
     <main class="chat-area" id="chatArea">
+
+      <!-- Mobile top bar -->
+      <header class="mobile-topbar" id="mobileTopbar">
+        <button class="btn-icon menu-btn" id="menuBtn">☰</button>
+        <span class="mobile-title">Design CRM</span>
+      </header>
 
       <!-- Empty state -->
       <div class="empty-state" id="emptyState">

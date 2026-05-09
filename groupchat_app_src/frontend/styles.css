@@ -1131,13 +1131,167 @@ body {
   color: #fca5a5;
 }
 
-.summary-conflict {
+/* ── Image server status bar in sidebar ───────────────────── */
+.sidebar-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+}
+.sidebar-status-label {
   font-size: 11px;
-  line-height: 1.6;
-  padding: 6px 10px;
-  margin-bottom: 6px;
-  border-radius: 6px;
-  background: rgba(239,68,68,0.08);
-  border-left: 3px solid #f87171;
-  color: #fca5a5;
+  color: var(--text-muted);
+}
+
+/* ── Mobile-only elements hidden on desktop ────────────────── */
+.sidebar-overlay { display: none; }
+.mobile-topbar   { display: none; }
+
+/* ══════════════════════════════════════════════════════════════
+   MOBILE  (≤ 768px)
+   ══════════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+
+  /* ── Sidebar overlay backdrop ── */
+  .sidebar-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    z-index: 199;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s;
+  }
+  .sidebar-overlay.open {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* ── Sidebar: slide-in drawer ── */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    width: 80vw;
+    max-width: 300px;
+    z-index: 200;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.6);
+    overflow-y: auto;
+  }
+  .sidebar.open { transform: translateX(0); }
+
+  /* ── Mobile top bar ── */
+  .mobile-topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .mobile-title {
+    font-family: var(--font-mono);
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .menu-btn {
+    font-size: 22px;
+    padding: 4px 6px;
+    color: var(--text);
+  }
+
+  /* ── App layout: single column ── */
+  .app { flex-direction: column; }
+
+  /* ── Auth card: full width ── */
+  .auth-screen { padding: 16px; align-items: flex-start; padding-top: 60px; }
+  .auth-card {
+    width: 100%;
+    padding: 28px 20px;
+    border-radius: 12px;
+  }
+
+  /* ── Font sizes: readable on mobile ── */
+  /* 16px on inputs prevents iOS auto-zoom */
+  .field         { font-size: 16px; padding: 13px 14px; }
+  .field.small   { font-size: 15px; padding: 10px 12px; }
+  .message .body { font-size: 15px; line-height: 1.6; }
+  .message .meta { font-size: 13px; }
+  .room-item     { font-size: 15px; padding: 13px 12px; }
+  .section-label { font-size: 11px; }
+  .sidebar-title { font-size: 15px; }
+  .sidebar-username { font-size: 13px; }
+  .chat-room-name { font-size: 15px; }
+  .chat-room-desc { font-size: 13px; }
+  .composer-input { font-size: 16px; }
+
+  /* ── Buttons: larger touch targets ── */
+  .btn        { font-size: 15px; padding: 13px 18px; min-height: 44px; }
+  .btn.small  { font-size: 14px; padding: 10px 14px; min-height: 40px; }
+  .btn-icon   { padding: 8px; font-size: 22px; min-width: 44px; min-height: 44px; }
+  .btn-create { padding: 12px; font-size: 14px; min-height: 44px; }
+
+  /* ── Reaction targets ── */
+  .reaction-add            { width: 36px; height: 36px; font-size: 20px; }
+  .reaction-pill           { padding: 4px 10px; font-size: 14px; }
+  .reaction-picker button  { font-size: 24px; padding: 6px; }
+
+  /* ── Chat header: wrap on overflow ── */
+  .chat-header {
+    flex-wrap: wrap;
+    row-gap: 8px;
+    padding: 10px 14px;
+  }
+  .header-actions {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .search-box         { flex: 1; min-width: 120px; }
+  .search-box .field  { width: 100%; }
+
+  /* ── Composer bar ── */
+  .composer {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+
+  /* ── Messages area ── */
+  .messages { padding: 12px; gap: 10px; }
+  .message  { padding: 12px 14px; border-radius: 12px; }
+
+  /* ── Summary panel: full-screen overlay on mobile ── */
+  .app.has-summary .chat-area {
+    display: flex;
+    flex-direction: column;
+  }
+  .summary-panel:not(.hidden) {
+    position: fixed;
+    inset: 0;
+    z-index: 150;
+    border-left: none;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
+  .summary-panel-content { flex: 1; }
+
+  /* ── Brief / confirm panels ── */
+  .brief-panel         { margin: 0 12px 10px; }
+  .order-confirm-panel { margin: 0 12px 10px; }
+
+  /* ── Generate image modal ── */
+  .modal-card {
+    width: calc(100% - 24px);
+    padding: 20px 16px 16px;
+    border-radius: 12px;
+  }
+
+  /* ── Room list: more room to scroll ── */
+  .room-list { max-height: none; }
 }

@@ -1,0 +1,37 @@
+# Design CRM — systemd service for uvicorn
+# Place at:  /etc/systemd/system/designcrm.service
+# Enable:    sudo systemctl daemon-reload && sudo systemctl enable designcrm
+# Start:     sudo systemctl start designcrm
+# Logs:      sudo journalctl -u designcrm -f
+
+[Unit]
+Description=Design CRM FastAPI Backend
+After=network.target mysql.service
+
+[Service]
+Type=simple
+User=designcrm                                        # ← run as a dedicated non-root user
+Group=designcrm
+
+WorkingDirectory=/opt/designcrm/groupchat_app_src/backend
+EnvironmentFile=/opt/designcrm/groupchat_app_src/.env
+
+# Single worker — ChromaDB is not thread-safe with multiple workers
+ExecStart=/opt/designcrm/venv/bin/uvicorn app:app \
+    --host 127.0.0.1 \
+    --port 8000 \
+    --workers 1 \
+    --log-level info
+
+Restart=always
+RestartSec=5
+
+# Resource limits
+LimitNOFILE=65536
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=designcrm
+
+[Install]
+WantedBy=multi-user.target

@@ -53,6 +53,8 @@ const generateError      = $("generateError");
 const generateSubmitBtn  = $("generateSubmitBtn");
 const generateCancelBtn  = $("generateCancelBtn");
 
+const imgStatusDot  = $("imgStatusDot");
+
 const briefPanel    = $("briefPanel");
 const briefBody     = $("briefBody");
 const briefSendBtn  = $("briefSendBtn");
@@ -271,6 +273,7 @@ async function handleRoomClick(room) {
     } catch (e) { return; }
   }
   await switchRoom(room);
+  if (window.innerWidth <= 768) closeSidebar();
 }
 
 function handlePrivateBrief(data) {
@@ -1002,6 +1005,24 @@ function formatBriefForRoom(brief) {
   if (b.confidence) lines.push(`Confidence: ${b.confidence}`);
   return lines.join("\n");
 }
+
+// ─── Mobile sidebar toggle ────────────────────────────────────────────────────
+const menuBtn        = $("menuBtn");
+const sidebarOverlay = $("sidebarOverlay");
+const sidebar        = $("sidebar");
+
+function openSidebar() {
+  sidebar.classList.add("open");
+  sidebarOverlay.classList.add("open");
+}
+
+function closeSidebar() {
+  sidebar.classList.remove("open");
+  sidebarOverlay.classList.remove("open");
+}
+
+if (menuBtn)        menuBtn.onclick        = () => sidebar.classList.contains("open") ? closeSidebar() : openSidebar();
+if (sidebarOverlay) sidebarOverlay.onclick = closeSidebar;
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 if (token) {
